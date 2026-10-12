@@ -176,7 +176,7 @@ pub async fn restore_damaged_vault(
                 session.limiter.succeeded();
                 session.vault = Some(vault);
                 session.touch(Instant::now());
-                session.config.last_vault = Some(path);
+                session.config.remember(path);
                 session.save_config();
                 Ok(())
             }

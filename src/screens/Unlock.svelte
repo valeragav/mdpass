@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
-  import { api, errorText, isCommandError } from "../lib/api";
+  import { api, errorText, isCommandError, type VaultFile } from "../lib/api";
   import { app, go } from "../lib/nav.svelte";
   import { plural } from "../lib/text";
   import Button from "../lib/ui/Button.svelte";
@@ -8,6 +8,7 @@
   import Icon from "../lib/ui/Icon.svelte";
   import Logo from "../lib/ui/Logo.svelte";
   import PasswordInput from "../lib/ui/PasswordInput.svelte";
+  import RecentVaults from "../lib/ui/RecentVaults.svelte";
 
   let password = $state("");
   let busy = $state(false);
@@ -53,11 +54,14 @@
 
   async function pickFile() {
     const file = await api.pickExistingVault();
-    if (file) {
-      app.vault = file;
-      wrong = false;
-      error = null;
-    }
+    if (file) switchTo(file);
+  }
+
+  function switchTo(file: VaultFile) {
+    app.vault = file;
+    password = "";
+    wrong = false;
+    error = null;
   }
 </script>
 
@@ -112,6 +116,8 @@
     </Button>
     <Button variant="ghost" size="sm" full onclick={() => go("welcome")}>Создать новое хранилище</Button>
   </form>
+
+  <RecentVaults onpick={switchTo} />
 
   <p class="hint">
     {#if wrong}

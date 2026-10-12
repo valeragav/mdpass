@@ -22,6 +22,7 @@
   import Logo from "../lib/ui/Logo.svelte";
   import { PROTECTION_LABEL } from "../lib/ui/ProtectionPicker.svelte";
   import ChangeProtection from "./settings/ChangeProtection.svelte";
+  import RenameVault from "./settings/RenameVault.svelte";
 
   type Tab = "security" | "file" | "look";
   const TABS: [Tab, string][] = [
@@ -69,6 +70,7 @@
     lastTab = tab;
   });
   let changingPassphrase = $state(false);
+  let renaming = $state(false);
 
   async function update(patch: Partial<Settings>) {
     const before = app.settings;
@@ -184,6 +186,7 @@
             <div class="name">Файл хранилища</div>
             <div class="file-row">
               <div class="file mono"><Icon name="file" /><span>{app.vault?.display}</span></div>
+              <Button size="sm" onclick={() => (renaming = true)}>Переименовать…</Button>
               <Button size="sm" onclick={showInFolder}>Показать в папке</Button>
             </div>
           </div>
@@ -258,6 +261,7 @@
 </div>
 
 <ChangeProtection open={changingPassphrase} onclose={() => (changingPassphrase = false)} />
+<RenameVault open={renaming} onclose={() => (renaming = false)} />
 
 <style>
   .screen {

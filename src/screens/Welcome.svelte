@@ -8,6 +8,7 @@
   import Logo from "../lib/ui/Logo.svelte";
   import PasswordInput from "../lib/ui/PasswordInput.svelte";
   import ProtectionPicker, { type Protection } from "../lib/ui/ProtectionPicker.svelte";
+  import RecentVaults from "../lib/ui/RecentVaults.svelte";
 
   let file = $state<VaultFile | null>(app.defaultVault);
   let protection = $state<Protection>("strong");
@@ -169,6 +170,13 @@
       <Button variant="ghost" size="sm" full onclick={openExisting}>Открыть существующее хранилище</Button>
     </div>
   </form>
+
+  <RecentVaults
+    onpick={(picked) => {
+      app.vault = picked;
+      go("unlock");
+    }}
+  />
 </div>
 
 <style>

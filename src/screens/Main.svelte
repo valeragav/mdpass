@@ -7,7 +7,7 @@
   import Button from "../lib/ui/Button.svelte";
   import ConfirmDialog from "../lib/ui/ConfirmDialog.svelte";
   import Icon from "../lib/ui/Icon.svelte";
-  import { deleteEntry, loadEntries, matches, vault } from "../lib/vault.svelte";
+  import { deleteEntry, loadEntries, lockVault, matches, vault } from "../lib/vault.svelte";
   import EntryDetails from "./main/EntryDetails.svelte";
   import Sidebar from "./main/Sidebar.svelte";
 
@@ -35,6 +35,22 @@
 
   let askDelete = $state(false);
 
+  // Ctrl+F — поиск, Ctrl+N — новая запись, Ctrl+L — заблокировать.
+  function onKey(event: KeyboardEvent) {
+    if (!(event.ctrlKey || event.metaKey) || event.altKey || askDelete) return;
+    const key = event.key.toLowerCase();
+    if (key === "f" || key === "а") {
+      event.preventDefault();
+      document.querySelector<HTMLInputElement>('input[type="search"]')?.focus();
+    } else if (key === "n" || key === "т") {
+      event.preventDefault();
+      go("new-entry");
+    } else if (key === "l" || key === "д") {
+      event.preventDefault();
+      lockVault();
+    }
+  }
+
   async function confirmDelete() {
     askDelete = false;
     if (!selected) return;
@@ -45,6 +61,8 @@
     }
   }
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 <AppShell {status}>
   <Sidebar {visible} bind:query bind:tag />

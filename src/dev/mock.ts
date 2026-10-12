@@ -85,6 +85,9 @@ mockIPC(
       return {
         unlocked,
         lastVault: lastVault ? describe(lastVault) : null,
+        recentVaults: [lastVault, `${HOME}/Documents/work.md.age`, `${HOME}/Desktop/old.md`]
+          .filter((p): p is string => !!p)
+          .map(describe),
         defaultVault: describe(`${HOME}/Documents/vault.md.age`),
         protection: unlocked ? protection : null,
         settings,
@@ -121,6 +124,11 @@ mockIPC(
       const value = ENTRIES.find((e) => e.id === n.entryId)?.fields[n.field]?.value;
       if (value === undefined) throw { kind: "entryNotFound" };
       return cmd === "reveal_field" ? value : null;
+    }
+    case "rename_vault": {
+      const name = (args as { name: string }).name.replace(/(\.md)?(\.age)?$/, "");
+      lastVault = `${HOME}/Documents/${name}${protection === "none" ? ".md" : ".md.age"}`;
+      return describe(lastVault);
     }
     case "reload_vault":
       return null;

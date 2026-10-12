@@ -20,6 +20,8 @@ interface AppState {
   vault: VaultFile | null;
   /// Куда по умолчанию положить новое хранилище.
   defaultVault: VaultFile | null;
+  /// Недавние хранилища для быстрого переключения.
+  recentVaults: VaultFile[];
   /// Техническая причина, по которой файл не открылся.
   fileErrorDetail: string;
   settings: Settings;
@@ -35,6 +37,7 @@ export const app = $state<AppState>({
   screen: "loading",
   vault: null,
   defaultVault: null,
+  recentVaults: [],
   fileErrorDetail: "",
   protection: null,
   backupsFrom: "main",

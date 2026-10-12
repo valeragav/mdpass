@@ -144,6 +144,8 @@ pub struct Status {
     unlocked: bool,
     /// Последнее открытое хранилище.
     last_vault: Option<VaultFile>,
+    /// Недавние хранилища, последнее — первым.
+    recent_vaults: Vec<VaultFile>,
     /// Куда предложить положить новое хранилище.
     default_vault: Option<VaultFile>,
     /// Защита открытого хранилища. `None`, пока хранилище заблокировано.
@@ -158,6 +160,7 @@ pub fn status<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Stat
     Status {
         unlocked: session.vault.is_some(),
         last_vault: session.config.last_vault.as_deref().map(|path| describe(&app, path)),
+        recent_vaults: session.config.recent_vaults.iter().map(|path| describe(&app, path)).collect(),
         default_vault,
         protection: session.vault.as_ref().map(Protection::of),
         settings: Settings::from(&session.config),
@@ -192,7 +195,7 @@ pub async fn create_vault(
         let mut session = state.lock();
         session.vault = Some(vault);
         session.touch(Instant::now());
-        session.config.last_vault = Some(path);
+        session.config.remember(path);
         session.save_config();
         Ok(protection)
     })
@@ -234,7 +237,7 @@ pub async fn unlock(
                 session.limiter.succeeded();
                 session.vault = Some(vault);
                 session.touch(Instant::now());
-                session.config.last_vault = Some(path);
+                session.config.remember(path);
                 session.save_config();
                 Ok(protection)
             }
@@ -272,6 +275,38 @@ pub async fn reload_vault(state: State<'_, AppState>) -> Result<(), CommandError
         }
     })
     .await
+}
+
+/// Переименовывает файл открытого хранилища в той же папке. Расширение `.md.age`
+/// или `.md` подставляется по защите, папка резервных копий переезжает следом.
+#[tauri::command]
+pub fn rename_vault<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+    name: String,
+) -> Result<VaultFile, CommandError> {
+    let mut session = state.lock();
+    let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
+    let name = name.trim();
+    let bad = name.is_empty()
+        || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+        || name.starts_with('.')
+        || name.ends_with('.');
+    if bad {
+        return Err(CommandError::Invalid { message: "Недопустимое имя файла".into() });
+    }
+    let stem = name.trim_end_matches(".age").trim_end_matches(".md");
+    let extension = if vault.is_encrypted() { ".md.age" } else { ".md" };
+    let old_path = vault.path().to_path_buf();
+    let new_path = old_path.with_file_name(format!("{stem}{extension}"));
+    let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
+    vault.rename_to(&new_path)?;
+    if let Err(err) = session.backup_store(&old_path).move_to(&session.backup_store(&new_path)) {
+        eprintln!("не удалось перенести резервные копии: {err}");
+    }
+    session.config.renamed(&old_path, new_path.clone());
+    session.save_config();
+    Ok(describe(&app, &new_path))
 }
 
 /// Интерфейс сообщает, что пользователь что-то делает: откладывает автоблокировку.
@@ -335,7 +370,7 @@ pub async fn change_protection<R: Runtime>(
             if let Err(err) = session.backup_store(&old_path).move_to(&session.backup_store(&wanted)) {
                 eprintln!("не удалось перенести резервные копии: {err}");
             }
-            session.config.last_vault = Some(wanted);
+            session.config.renamed(&old_path, wanted);
             session.save_config();
         }
         let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;

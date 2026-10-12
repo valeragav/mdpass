@@ -167,6 +167,19 @@
     }
   }
 
+  // Ctrl+S — сохранить, Esc — назад (с вопросом, если есть правки).
+  function onKey(event: KeyboardEvent) {
+    if (askLeave || askDelete) return;
+    const key = event.key.toLowerCase();
+    if ((event.ctrlKey || event.metaKey) && (key === "s" || key === "ы")) {
+      event.preventDefault();
+      save();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      leave();
+    }
+  }
+
   function leave() {
     if (dirty) askLeave = true;
     else go("main");
@@ -185,6 +198,8 @@
 
   let fileName = $derived(app.vault?.name.replace(/\.age$/, "") ?? "vault.md");
 </script>
+
+<svelte:window onkeydown={onKey} />
 
 <div class="screen">
   <header>

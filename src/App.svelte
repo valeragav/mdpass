@@ -93,6 +93,7 @@
     app.settings = status.settings;
     app.protection = status.protection;
     app.defaultVault = status.defaultVault;
+    app.recentVaults = status.recentVaults;
     app.vault = status.lastVault;
     if (status.unlocked) go("main");
     else if (status.lastVault) go("unlock");

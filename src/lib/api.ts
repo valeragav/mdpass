@@ -29,6 +29,8 @@ export interface Settings {
 export interface Status {
   unlocked: boolean;
   lastVault: VaultFile | null;
+  /// Недавние хранилища, последнее — первым.
+  recentVaults: VaultFile[];
   defaultVault: VaultFile | null;
   /// Защита открытого хранилища. `null`, пока оно заблокировано.
   protection: Protection | null;
@@ -181,6 +183,8 @@ export const api = {
   lock: () => invoke<void>("lock"),
   touch: () => invoke<void>("touch"),
   reloadVault: () => invoke<void>("reload_vault"),
+  /// Новое имя файла в той же папке, расширение подставится по защите.
+  renameVault: (name: string) => invoke<VaultFile>("rename_vault", { name }),
   /// Файл заодно переименовывается под защиту: `vault.md.age` или `vault.md`.
   changeProtection: (current: string | null, next: string | null, protection: Protection) =>
     call<{ protection: Protection; vault: VaultFile }>("change_protection", { current, new: next, protection }),

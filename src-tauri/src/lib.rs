@@ -98,6 +98,7 @@ pub fn run() {
             commands::lock,
             commands::touch,
             commands::reload_vault,
+            commands::rename_vault,
             commands::change_protection,
             settings::update_settings,
             backups::list_backups,
