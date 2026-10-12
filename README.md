@@ -13,7 +13,7 @@ Windows · macOS · Linux · шифрование age
 
 [Руководство](docs/guide.md) · [Установка и разработка](docs/setup.md) · [Безопасность](docs/SECURITY.md) · [Изменения](CHANGELOG.md)
 
-![Разблокировка, показ и копирование пароля, поиск, перетаскивание и новая запись](docs/demo.gif)
+![Разблокировка, записи раздела, стрелки и Ctrl+C, поиск, перетаскивание, новая запись и горячие клавиши](docs/demo.gif)
 
 </div>
 
@@ -25,7 +25,7 @@ Windows · macOS · Linux · шифрование age
 ```markdown
 # work
 ## server
-**vps1 (инфра)**
+**node-a (кластер)**
 ssh: deploy@203.0.113.10
 password: ••••••••
 tags: [work], [prod]

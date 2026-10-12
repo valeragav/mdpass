@@ -15,19 +15,19 @@ let protection: "strong" | "weak" | "none" = "strong";
 
 // Выдуманные данные: адреса из диапазонов для документации, пароли случайные.
 const ENTRIES = [
-  { id: 1, path: ["work", "server"], title: "alpha (инфра)", tags: ["prod"], fields: [
+  { id: 1, path: ["work", "server"], title: "web-01 (прод)", tags: ["prod"], fields: [
     { key: "ssh", value: "deploy@203.0.113.10", secret: false },
     { key: "password", value: "q7#Lm2vX9pTe", secret: true },
   ] },
-  { id: 2, path: ["work", "server"], title: "beta (стейдж)", tags: ["dev"], fields: [
+  { id: 2, path: ["work", "server"], title: "web-02 (тест)", tags: ["dev"], fields: [
     { key: "ssh", value: "deploy@198.51.100.24", secret: false },
     { key: "password", value: "Zk4!rW8nYb1s", secret: true },
   ] },
-  { id: 3, path: ["work", "server"], title: "БД заказов", tags: [], fields: [
+  { id: 3, path: ["work", "server"], title: "БД каталога", tags: [], fields: [
     { key: "port", value: "5432", secret: false },
-    { key: "user", value: "orders_app", secret: false },
+    { key: "user", value: "catalog_app", secret: false },
     { key: "password", value: "hV3$eQ6mJ0cA", secret: true },
-    { key: "note", value: "таблицу orders_tmp можно удалять", secret: false },
+    { key: "note", value: "таблицу catalog_tmp можно удалять", secret: false },
   ] },
   { id: 4, path: ["work", "site"], title: "example.test", tags: ["work", "prod"], fields: [
     { key: "url", value: "https://example.test/", secret: false },
@@ -191,8 +191,8 @@ mockIPC(
     case "preview_backup": {
       const id = (args as { id: string }).id;
       if (id.includes("passphrase")) throw { kind: "otherPassphrase" };
-      if (id.includes("add")) return [{ kind: "removed", title: "example.test" }, { kind: "changed", title: "БД заказов", keys: ["note"] }];
-      return [{ kind: "changed", title: "БД заказов", keys: ["note"] }];
+      if (id.includes("add")) return [{ kind: "removed", title: "example.test" }, { kind: "changed", title: "БД каталога", keys: ["note"] }];
+      return [{ kind: "changed", title: "БД каталога", keys: ["note"] }];
     }
     case "restore_backup":
       return null;
@@ -207,9 +207,9 @@ mockIPC(
     case "analyze_import": {
       const fixes = (args as { fixes: Record<string, boolean> }).fixes;
       const places = [
-        { path: ["work", "server"], title: "vps1 (инфра)" },
-        { path: ["work", "server"], title: "vps2 (бизнес)" },
-        { path: ["work", "site"], title: "leading" },
+        { path: ["work", "server"], title: "node-a (кластер)" },
+        { path: ["work", "server"], title: "node-b (резерв)" },
+        { path: ["work", "site"], title: "landing" },
         { path: ["my"], title: "почта" },
       ];
       if (!fixes.emptySections) places.push({ path: ["my"], title: "заметки" });
@@ -219,10 +219,10 @@ mockIPC(
         fields: 9,
         tags: 3,
         issues: [
-          { kind: "legacyTags", titles: ["leading"] },
-          { kind: "duplicateNotes", titles: ["БД анкеты"] },
+          { kind: "legacyTags", titles: ["landing"] },
+          { kind: "duplicateNotes", titles: ["БД отзывов"] },
           { kind: "emptySections", titles: ["заметки"] },
-          { kind: "missingSpace", titles: ["vps2 (бизнес)"] },
+          { kind: "missingSpace", titles: ["node-b (резерв)"] },
         ],
         places,
       };

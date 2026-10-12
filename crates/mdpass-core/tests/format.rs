@@ -22,7 +22,7 @@ const SAMPLE: &str = "\
 
 ## server
 
-**alpha (стейдж)**
+**web-01 (тест)**
 ssh: deploy@203.0.113.10
 password: correct-horse
 
@@ -30,7 +30,7 @@ password: correct-horse
 port: 5432
 user: app_user
 password: battery-staple
-note: старая таблица orders_tmp не нужна
+note: старая таблица catalog_tmp не нужна
 
 ## site
 
@@ -70,7 +70,7 @@ fn unchanged_document_round_trips_byte_for_byte() {
 fn entries_get_section_path_title_and_fields() {
     let doc = Document::parse(SAMPLE);
     let entries = doc.entries();
-    assert_eq!(titles(&doc), ["alpha (стейдж)", "beta", "example", "почта"]);
+    assert_eq!(titles(&doc), ["web-01 (тест)", "beta", "example", "почта"]);
 
     let alpha = &entries[0];
     assert_eq!(alpha.path, ["work", "server"]);
@@ -158,9 +158,9 @@ fn adding_six_levels_deep_is_allowed() {
 fn adding_to_an_existing_section_appends_after_its_last_entry() {
     let mut doc = Document::parse(SAMPLE);
     doc.add(draft(&["work", "server"], "gamma", vec![field("ssh", "g")], &[])).unwrap();
-    assert_eq!(titles(&doc), ["alpha (стейдж)", "beta", "gamma", "example", "почта"]);
+    assert_eq!(titles(&doc), ["web-01 (тест)", "beta", "gamma", "example", "почта"]);
     let md = doc.to_markdown();
-    assert!(md.contains("note: старая таблица orders_tmp не нужна\n\n**gamma**\nssh: g\n\n## site\n"), "{md}");
+    assert!(md.contains("note: старая таблица catalog_tmp не нужна\n\n**gamma**\nssh: g\n\n## site\n"), "{md}");
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn updating_an_entry_rewrites_only_that_entry() {
     let beta = doc.entries()[1].id;
     doc.update(beta, draft(&["work", "server"], "beta", vec![field("port", "6543")], &[])).unwrap();
     let expected = SAMPLE.replace(
-        "port: 5432\nuser: app_user\npassword: battery-staple\nnote: старая таблица orders_tmp не нужна\n",
+        "port: 5432\nuser: app_user\npassword: battery-staple\nnote: старая таблица catalog_tmp не нужна\n",
         "port: 6543\n",
     );
     assert_eq!(doc.to_markdown(), expected);

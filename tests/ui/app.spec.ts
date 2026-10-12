@@ -6,7 +6,7 @@ async function unlock(page: Page) {
   await page.goto("/");
   await page.getByLabel("Мастер-пароль").fill("password1");
   await page.getByRole("button", { name: "Разблокировать" }).click();
-  await expect(page.getByRole("heading", { name: "alpha (инфра)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "web-01 (прод)" })).toBeVisible();
 }
 
 const sidebar = (page: Page) => page.getByRole("navigation", { name: "Записи" });
@@ -40,7 +40,7 @@ test("поиск и фильтр по тегу сужают список", async
   await unlock(page);
   await page.getByRole("searchbox", { name: "Поиск" }).fill("почта");
   await expect(sidebar(page).getByRole("button", { name: /почта/ })).toBeVisible();
-  await expect(sidebar(page).getByRole("button", { name: /alpha/ })).toHaveCount(0);
+  await expect(sidebar(page).getByRole("button", { name: /web-01/ })).toHaveCount(0);
   await expect(page.getByText("1 из 5 записей")).toBeVisible();
 
   await page.getByRole("searchbox", { name: "Поиск" }).fill("");
@@ -56,9 +56,9 @@ test("раздел сворачивается и разворачивается"
   await expect(server).toHaveAttribute("aria-expanded", "true");
   await server.click();
   await expect(server).toHaveAttribute("aria-expanded", "false");
-  await expect(sidebar(page).getByRole("button", { name: /beta/ })).toHaveCount(0);
+  await expect(sidebar(page).getByRole("button", { name: /web-02/ })).toHaveCount(0);
   await server.click();
-  await expect(sidebar(page).getByRole("button", { name: /beta/ })).toBeVisible();
+  await expect(sidebar(page).getByRole("button", { name: /web-02/ })).toBeVisible();
   // Стрелка у раздела сворачивает сразу.
   await server.locator(".chevron").click();
   await expect(server).toHaveAttribute("aria-expanded", "false");
@@ -79,14 +79,14 @@ test("щелчок по разделу показывает все его зап
   await sidebar(page).getByRole("button", { name: "server", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "server" })).toBeVisible();
   await expect(page.getByText("3 записи в разделе")).toBeVisible();
-  for (const title of ["alpha (инфра)", "beta (стейдж)", "БД заказов"]) {
+  for (const title of ["web-01 (прод)", "web-02 (тест)", "БД каталога"]) {
     await expect(page.getByRole("region", { name: title })).toBeVisible();
   }
   await expect(page.getByRole("region", { name: "example.test" })).toHaveCount(0);
 
   // Курсор идёт по названиям записей раздела и их полям.
   await page.keyboard.press("Enter");
-  await expect(page.locator(".title.cursor")).toHaveText("alpha (инфра)");
+  await expect(page.locator(".title.cursor")).toHaveText("web-01 (прод)");
   await page.keyboard.press("ArrowDown");
   await expect(page.locator(".field.cursor")).toContainText("deploy@203.0.113.10");
   for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
@@ -94,8 +94,8 @@ test("щелчок по разделу показывает все его зап
   await page.keyboard.press("Control+c");
   await expect(page.getByRole("status")).toContainText("Скопирована команда ssh");
 
-  await page.getByRole("region", { name: "beta (стейдж)" }).getByRole("button", { name: "beta (стейдж)" }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "beta (стейдж)" })).toBeVisible();
+  await page.getByRole("region", { name: "web-02 (тест)" }).getByRole("button", { name: "web-02 (тест)" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "web-02 (тест)" })).toBeVisible();
 
   // В разделе только подразделы: по ним тоже ходят стрелки, Enter или → открывает.
   await sidebar(page).getByRole("button", { name: "work", exact: true }).click();
@@ -116,7 +116,7 @@ test("щелчок по разделу показывает все его зап
 test("стрелки ходят по списку и полям, Ctrl+C копирует поле под курсором", async ({ page }) => {
   await unlock(page);
   await page.keyboard.press("ArrowDown");
-  await expect(page.getByRole("heading", { name: "beta (стейдж)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "web-02 (тест)" })).toBeVisible();
 
   await page.keyboard.press("ArrowRight");
   const cursor = page.locator(".field.cursor");
@@ -138,7 +138,7 @@ test("стрелки ходят по списку и полям, Ctrl+C копи
   // → на разделе раскрывает его и переводит курсор в его список справа.
   await page.keyboard.press("ArrowRight");
   await expect(server).toHaveAttribute("aria-expanded", "true");
-  await expect(page.locator(".title.cursor")).toHaveText("alpha (инфра)");
+  await expect(page.locator(".title.cursor")).toHaveText("web-01 (прод)");
   await page.keyboard.press("ArrowDown");
   await expect(page.locator(".field.cursor")).toContainText("deploy@203.0.113.10");
   await page.keyboard.press("ArrowLeft");
@@ -180,7 +180,7 @@ test("много тегов не вытесняют список записей"
   const more = page.getByRole("button", { name: /^Все теги \(\d+\)$/ });
   await expect(more).toBeVisible();
   expect((await tags.boundingBox())!.height).toBeLessThanOrEqual(62);
-  await expect(sidebar(page).getByRole("button", { name: /alpha/ })).toBeInViewport();
+  await expect(sidebar(page).getByRole("button", { name: /web-01/ })).toBeInViewport();
 
   await more.click();
   expect((await tags.boundingBox())!.height).toBeGreaterThan(62);
@@ -190,7 +190,7 @@ test("много тегов не вытесняют список записей"
 
 test("в редакторе порядок полей меняется перетаскиванием и Alt+стрелками", async ({ page }) => {
   await unlock(page);
-  await sidebar(page).getByRole("button", { name: /БД заказов/ }).click();
+  await sidebar(page).getByRole("button", { name: /БД каталога/ }).click();
   await page.getByRole("button", { name: "Редактировать" }).click();
   const keys = page.getByLabel("Ключ поля");
   await expect(keys).toHaveCount(3); // note редактируется отдельно
@@ -223,22 +223,22 @@ test("в редакторе порядок полей меняется пере�
 test("выход из редактора с правками спрашивает подтверждение", async ({ page }) => {
   await unlock(page);
   await page.getByRole("button", { name: "Редактировать" }).click();
-  await page.getByLabel("Название").fill("alpha (новая)");
+  await page.getByLabel("Название").fill("web-01 (новая)");
   await page.keyboard.press("Escape");
   const dialog = page.getByRole("dialog", { name: "Сохранить изменения?" });
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Сохранить" }).click();
-  await expect(page.getByRole("heading", { name: "alpha (новая)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "web-01 (новая)" })).toBeVisible();
 });
 
 test("удаление записи спрашивает подтверждение", async ({ page }) => {
   await unlock(page);
   await page.getByRole("button", { name: "Удалить запись" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog).toContainText("Удалить «alpha (инфра)»?");
+  await expect(dialog).toContainText("Удалить «web-01 (прод)»?");
   await dialog.getByRole("button", { name: "Удалить" }).click();
   await expect(page.getByRole("status")).toContainText("удалена");
-  await expect(sidebar(page).getByRole("button", { name: /alpha/ })).toHaveCount(0);
+  await expect(sidebar(page).getByRole("button", { name: /web-01/ })).toHaveCount(0);
 });
 
 test("запись перетаскивается в другой раздел", async ({ page }) => {
@@ -255,7 +255,7 @@ test("горячие клавиши: Ctrl+N открывает новую зап
   await page.keyboard.press("Control+n");
   await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
   await page.keyboard.press("Escape");
-  await expect(page.getByRole("heading", { name: "alpha (инфра)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "web-01 (прод)" })).toBeVisible();
 });
 
 test("хранилище без шифрования создаётся без пароля", async ({ page }) => {

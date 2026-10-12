@@ -44,16 +44,16 @@ fn main() -> ExitCode {
     };
 
     let entries = [
-        entry(&["work", "server"], "alpha (инфра)", &[("ssh", "deploy@203.0.113.10"), ("password", "*")], &["prod"]),
-        entry(&["work", "server"], "beta (стейдж)", &[("ssh", "deploy@198.51.100.24"), ("password", "*")], &["dev"]),
+        entry(&["work", "server"], "web-01 (прод)", &[("ssh", "deploy@203.0.113.10"), ("password", "*")], &["prod"]),
+        entry(&["work", "server"], "web-02 (тест)", &[("ssh", "deploy@198.51.100.24"), ("password", "*")], &["dev"]),
         entry(
             &["work", "server"],
-            "БД заказов",
+            "БД каталога",
             &[
                 ("port", "5432"),
-                ("user", "orders_app"),
+                ("user", "catalog_app"),
                 ("password", "*"),
-                ("note", "таблицу orders_tmp можно удалять"),
+                ("note", "таблицу catalog_tmp можно удалять"),
             ],
             &[],
         ),

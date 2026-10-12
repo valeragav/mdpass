@@ -7,22 +7,22 @@ const SOURCE: &str = "\
 
 ## server
 
-### vps1 (инфра)
+### node-a (кластер)
 ssh: deploy@203.0.113.10
 password: aaa
 
-### vps2 (бизнес)
+### node-b (резерв)
 ssh:deploy@198.51.100.24
 password: bbb
 
-### БД анкеты
+### БД отзывов
 port: 5432
 note1: таблицу tmp можно удалять
 note2: таблицу tmp можно удалять
 
 ## site
 
-### leading
+### landing
 url: https://example.test/
 teg: [server], [work], [prod]
 
@@ -47,10 +47,10 @@ fn all_issues_are_found_with_the_entries_they_touch() {
     assert_eq!(
         found,
         vec![
-            (IssueKind::LegacyTags, vec!["leading".to_string()]),
-            (IssueKind::DuplicateNotes, vec!["БД анкеты".to_string()]),
+            (IssueKind::LegacyTags, vec!["landing".to_string()]),
+            (IssueKind::DuplicateNotes, vec!["БД отзывов".to_string()]),
             (IssueKind::EmptySections, vec!["заметки".to_string()]),
-            (IssueKind::MissingSpace, vec!["vps2 (бизнес)".to_string()]),
+            (IssueKind::MissingSpace, vec!["node-b (резерв)".to_string()]),
         ]
     );
 }
@@ -58,19 +58,19 @@ fn all_issues_are_found_with_the_entries_they_touch() {
 #[test]
 fn fixes_clean_the_document() {
     let result = analyze(SOURCE, Fixes::default()).result;
-    assert_eq!(titles(&result), ["vps1 (инфра)", "vps2 (бизнес)", "БД анкеты", "leading", "почта"]);
+    assert_eq!(titles(&result), ["node-a (кластер)", "node-b (резерв)", "БД отзывов", "landing", "почта"]);
 
     let entries = result.entries();
-    let leading = &entries[3];
-    assert_eq!(leading.tags, ["server", "work", "prod"]);
-    assert!(leading.fields.iter().all(|f| f.key != "teg"));
+    let landing = &entries[3];
+    assert_eq!(landing.tags, ["server", "work", "prod"]);
+    assert!(landing.fields.iter().all(|f| f.key != "teg"));
 
     let notes: Vec<_> = entries[2].fields.iter().filter(|f| f.key.starts_with("note")).collect();
     assert_eq!(notes.len(), 1);
     assert_eq!((notes[0].key.as_str(), notes[0].value.as_str()), ("note", "таблицу tmp можно удалять"));
 
     let md = result.to_markdown();
-    assert!(md.contains("**vps1 (инфра)**\nssh: deploy@203.0.113.10\n"), "{md}");
+    assert!(md.contains("**node-a (кластер)**\nssh: deploy@203.0.113.10\n"), "{md}");
     assert!(md.contains("ssh: deploy@198.51.100.24\n"), "{md}");
     assert!(md.contains("строка без ключа\n"), "строки без ключа не теряются");
     assert!(!md.contains("заметки"));
@@ -82,10 +82,10 @@ fn unchecked_fixes_only_turn_entry_headings_bold() {
     let analysis = analyze(SOURCE, none);
     assert_eq!(analysis.issues.len(), 4, "проблемы показываются, даже если их не исправлять");
     let expected = SOURCE
-        .replace("### vps1 (инфра)", "**vps1 (инфра)**")
-        .replace("### vps2 (бизнес)", "**vps2 (бизнес)**")
-        .replace("### БД анкеты", "**БД анкеты**")
-        .replace("### leading", "**leading**")
+        .replace("### node-a (кластер)", "**node-a (кластер)**")
+        .replace("### node-b (резерв)", "**node-b (резерв)**")
+        .replace("### БД отзывов", "**БД отзывов**")
+        .replace("### landing", "**landing**")
         .replace("### почта", "**почта**")
         .replace("## заметки", "**заметки**");
     assert_eq!(analysis.result.to_markdown(), expected);
