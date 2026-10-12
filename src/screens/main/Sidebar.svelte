@@ -288,7 +288,7 @@
         <button
           type="button"
           class="entry {dropClass(row.key)}"
-          class:on={row.entry.id === vault.selectedId}
+          class:on={row.entry.id === vault.selectedId && vault.selectedSection === null}
           class:faded={isDragged(row)}
           data-drop={row.key}
           aria-current={row.entry.id === vault.selectedId ? "true" : undefined}
@@ -430,9 +430,10 @@
     background: var(--bg-hover);
   }
 
-  /* Выбранный раздел: в нём создастся новая запись. */
+  /* Выбранный раздел подсвечивается так же, как выбранная запись: в нём создастся новая запись. */
   .group.on {
-    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    color: var(--text-strong);
   }
 
   .chevron {
