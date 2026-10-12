@@ -24,7 +24,7 @@
 
   let { visible, query = $bindable(), tag = $bindable() }: Props = $props();
 
-  type GroupRow = { kind: "group"; key: string; depth: number; label: string; path: string[]; count: number };
+  type GroupRow = { kind: "group"; key: string; depth: number; label: string; path: string[] };
   type EntryRow = { kind: "entry"; key: string; depth: number; entry: EntryView };
   type Row = GroupRow | EntryRow;
 
@@ -34,24 +34,17 @@
   // Записи идут в порядке файла. Заголовок раздела ставим там, где путь меняется.
   let rows = $derived.by(() => {
     const out: Row[] = [];
-    const groups = new Map<string, GroupRow>();
     let last: string[] = [];
     for (const entry of visible) {
       entry.path.forEach((part, i) => {
         // Если раздел сменился на этом уровне, все более глубокие тоже начинаются заново.
         if (last[i] !== part) {
           const path = entry.path.slice(0, i + 1);
-          const row: GroupRow = { kind: "group", key: `g:${pathKey(path)}`, depth: i, label: part, path, count: 0 };
-          groups.set(pathKey(path), row);
-          out.push(row);
+          out.push({ kind: "group", key: `g:${pathKey(path)}`, depth: i, label: part, path });
           last = [...last.slice(0, i), part];
         }
       });
       last = entry.path.slice();
-      entry.path.forEach((_, i) => {
-        const group = groups.get(pathKey(entry.path.slice(0, i + 1)));
-        if (group) group.count++;
-      });
       out.push({ kind: "entry", key: `e:${entry.id}`, depth: entry.path.length, entry });
     }
     return out;
@@ -284,9 +277,7 @@
           onclick={() => !suppressClick && toggle(row)}
         >
           <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
-          <span class="hashes">{"#".repeat(row.depth + 1)}</span>
           <span class="label">{row.label}</span>
-          <span class="group-count">{row.count}</span>
         </button>
       {:else}
         <button
@@ -397,8 +388,7 @@
     color: var(--accent);
   }
 
-  .count,
-  .group-count {
+  .count {
     color: var(--text-subtle);
   }
 
@@ -443,20 +433,12 @@
     transform: rotate(90deg);
   }
 
-  .hashes {
-    color: var(--text-faint);
-  }
-
   .label {
     flex: 1;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  .group-count {
-    font-size: 11px;
   }
 
   .entry {

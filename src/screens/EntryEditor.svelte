@@ -1,7 +1,7 @@
 <script lang="ts">
   import { untrack } from "svelte";
   import { api, errorText, type EntryView, type FieldInput } from "../lib/api";
-  import { isSecretName, parsePath, parseTags, previewLines } from "../lib/entryText";
+  import { isSecretName, parsePath, parseTags } from "../lib/entryText";
   import { app, go } from "../lib/nav.svelte";
   import { showToast } from "../lib/toast.svelte";
   import Button from "../lib/ui/Button.svelte";
@@ -9,7 +9,6 @@
   import Icon from "../lib/ui/Icon.svelte";
   import IconButton from "../lib/ui/IconButton.svelte";
   import Logo from "../lib/ui/Logo.svelte";
-  import MarkdownPreview from "../lib/ui/MarkdownPreview.svelte";
   import { deleteEntry, loadEntries, vault } from "../lib/vault.svelte";
 
   /// Запись, которую правим. `null` — новая запись.
@@ -185,21 +184,6 @@
     }
   }
 
-  // Секрет в предпросмотре виден, только если его показали в форме.
-  let lines = $derived(
-    previewLines({
-      path: parsePath(path),
-      title: title.trim(),
-      tags: parseTags(tags),
-      fields: [
-        ...rows
-          .filter((r) => r.key.trim())
-          .map((r) => ({ key: r.key.trim(), value: r.secret && !r.shown ? null : r.value || "…" })),
-        ...(note.trim() ? [{ key: "note", value: note.trim() }] : []),
-      ],
-    }),
-  );
-
   let fileName = $derived(app.vault?.name.replace(/\.age$/, "") ?? "vault.md");
 </script>
 
@@ -367,13 +351,6 @@
       </div>
     </form>
 
-    <aside>
-      <div class="aside-head mono">Так запись {entry ? "лежит" : "ляжет"} в {fileName}</div>
-      <div class="scroll aside-body">
-        <MarkdownPreview {lines} />
-      </div>
-      <div class="aside-foot">В предпросмотре скрытые поля показаны точками</div>
-    </aside>
   </div>
 </div>
 
@@ -682,36 +659,6 @@
     font-size: 13px;
   }
 
-  aside {
-    width: 380px;
-    flex: none;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    background: var(--bg-inset);
-    border-left: 1px solid var(--line);
-  }
-
-  .aside-head {
-    padding: 14px 20px;
-    border-bottom: 1px solid var(--line);
-    font-size: 12px;
-    color: var(--text-subtle);
-  }
-
-  .aside-body {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-  }
-
-  .aside-foot {
-    padding: 12px 20px;
-    border-top: 1px solid var(--line);
-    font-size: 12px;
-    color: var(--text-subtle);
-  }
-
   .spread {
     width: 100%;
     display: flex;
@@ -732,9 +679,4 @@
     background: var(--bg-hover-strong);
   }
 
-  @media (max-width: 1100px) {
-    aside {
-      display: none;
-    }
-  }
 </style>
