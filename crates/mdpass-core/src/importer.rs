@@ -5,8 +5,36 @@
 //! старый ключ `teg` вместо `tags`, одинаковые заметки `note1`, `note2`, пустые
 //! разделы, слитное «ключ:значение». Исправления вносятся прямо в разобранный
 //! документ, поэтому всё остальное в файле остаётся как было.
+//!
+//! Старые файлы записывали записи заголовком: `### vps1`. Перед разбором такие
+//! заголовки превращаются в жирное название `**vps1**`.
 
-use crate::format::{Document, Entry, EntryDraft, EntryId, Field, FormatError};
+use crate::format::{Document, Entry, EntryDraft, EntryId, Field, FormatError, content, entry_title_of, heading_of};
+
+/// Переписывает заголовки-записи старого вида в жирные названия. Заголовок
+/// считается записью, если в нём нет вложенных заголовков и жирных записей —
+/// так файлы и читались раньше. Остальные строки не меняются.
+pub fn convert_legacy_entries(markdown: &str) -> String {
+    let lines: Vec<&str> = markdown.split_inclusive('\n').collect();
+    let headings: Vec<(usize, usize, String)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, line)| heading_of(content(line)).map(|(level, title)| (i, level, title)))
+        .collect();
+    let mut out: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+    for (n, (start, level, title)) in headings.iter().enumerate() {
+        let next = headings.get(n + 1);
+        let end = next.map_or(lines.len(), |h| h.0);
+        let leaf = next.is_none_or(|h| h.1 <= *level);
+        let has_entries = lines[start + 1..end].iter().any(|line| entry_title_of(content(line)).is_some());
+        if leaf && !has_entries && !title.is_empty() {
+            let line = lines[*start];
+            let ending = &line[content(line).len()..];
+            out[*start] = format!("**{title}**{ending}");
+        }
+    }
+    out.concat()
+}
 
 /// Какие исправления применить. По умолчанию все, как в дизайне.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -93,7 +121,7 @@ fn missing_space(source: &str) -> bool {
 }
 
 pub fn analyze(markdown: &str, fixes: Fixes) -> Analysis {
-    let mut doc = Document::parse(markdown);
+    let mut doc = Document::parse(&convert_legacy_entries(markdown));
     let entries = doc.entries();
 
     let ids = |test: &dyn Fn(&Entry) -> bool| entries.iter().filter(|e| test(e)).map(|e| e.id).collect::<Vec<_>>();

@@ -10,9 +10,6 @@ export function isSecretName(key: string): boolean {
   return SECRET_WORDS.some((w) => k.includes(w)) || SECRET_NAMES.includes(k);
 }
 
-/// Записи пишутся заголовком не мельче `###`.
-const MIN_ENTRY_LEVEL = 3;
-
 export interface PreviewLine {
   prefix: string;
   key: string;
@@ -32,11 +29,11 @@ export interface PreviewEntry {
 export function previewLines(entry: PreviewEntry): PreviewLine[] {
   const out: PreviewLine[] = [];
   entry.path.forEach((part, i) => out.push({ prefix: "#".repeat(i + 1) + " ", key: "", value: part, tone: "muted" }));
-  const level = Math.max(MIN_ENTRY_LEVEL, entry.path.length + 1);
+  // Запись в файле — строка с названием жирным: **название**.
   out.push({
-    prefix: "#".repeat(level) + " ",
+    prefix: "",
     key: "",
-    value: entry.title || "название",
+    value: `**${entry.title || "название"}**`,
     tone: entry.title ? "title" : "placeholder",
   });
 

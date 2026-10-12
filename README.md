@@ -6,7 +6,7 @@
 ```markdown
 # work
 ## server
-### vps1 (инфра)
+**vps1 (инфра)**
 ssh: deploy@203.0.113.10
 password: ••••••••
 tags: [work], [prod]
