@@ -301,3 +301,24 @@ fn debug_output_hides_secret_values() {
     assert!(!entries.contains("hunter2") && entries.contains("admin"), "{entries}");
     assert!(!format!("{doc:?}").contains("hunter2"));
 }
+
+#[test]
+fn format_header_is_read_and_added_once() {
+    let doc = Document::parse("<!-- mdpass:1 -->\n\n# work\n");
+    assert_eq!(doc.format_version(), Some(1));
+    assert_eq!(Document::parse("# work\n").format_version(), None);
+
+    let mut empty = Document::default();
+    empty.ensure_header();
+    empty.ensure_header();
+    assert_eq!(empty.to_markdown(), "<!-- mdpass:1 -->\n");
+    assert!(empty.is_blank());
+    empty.add(draft(&["work"], "a", vec![field("k", "v")], &[])).unwrap();
+    assert_eq!(empty.to_markdown(), "<!-- mdpass:1 -->\n\n# work\n\n**a**\nk: v\n");
+    assert!(!empty.is_blank());
+
+    let mut old = Document::parse("**a**\nk: v\n");
+    old.ensure_header();
+    assert_eq!(old.to_markdown(), "<!-- mdpass:1 -->\n\n**a**\nk: v\n");
+    assert_eq!(old.entries().len(), 1);
+}

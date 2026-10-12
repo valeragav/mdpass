@@ -287,3 +287,25 @@ fn rename_does_not_overwrite_another_file() {
     assert_eq!(fs::read_to_string(&other).unwrap(), "чужой");
     assert_eq!(vault.path(), path);
 }
+
+#[test]
+fn new_and_saved_vaults_carry_the_format_header() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md");
+    Vault::create_plain(&path).unwrap();
+    assert!(fs::read_to_string(&path).unwrap().starts_with("<!-- mdpass:1 -->"));
+
+    let old = dir.path().join("old.md");
+    fs::write(&old, "**a**\nk: v\n").unwrap();
+    let mut vault = Vault::open_plain(&old).unwrap();
+    vault.save().unwrap();
+    assert_eq!(fs::read_to_string(&old).unwrap(), "<!-- mdpass:1 -->\n\n**a**\nk: v\n");
+}
+
+#[test]
+fn vault_from_a_newer_app_is_not_opened() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md");
+    fs::write(&path, "<!-- mdpass:2 -->\n\n**a**\nk: v\n").unwrap();
+    assert!(matches!(Vault::open_plain(&path), Err(VaultError::NewerFormat(2))));
+}

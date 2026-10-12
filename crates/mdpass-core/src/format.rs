@@ -12,6 +12,9 @@
 //! tags: [work], [prod]   ← теги
 //! ```
 //!
+//! Первая строка файла — метка формата `<!-- mdpass:1 -->`. В редакторах Markdown
+//! она не видна. По ней будущие версии узнают, как читать файл.
+//!
 //! Заголовки — только разделы. Запись принадлежит последнему открытому разделу.
 //! Записи до первого заголовка лежат на верхнем уровне.
 //!
@@ -22,6 +25,11 @@
 use std::fmt;
 
 use zeroize::Zeroize;
+
+/// Версия формата, которую пишет и понимает эта версия приложения.
+pub const FORMAT_VERSION: u32 = 1;
+const HEADER_START: &str = "<!-- mdpass:";
+const HEADER_END: &str = " -->";
 
 /// Самый глубокий заголовок Markdown: столько уровней разделов бывает.
 const MAX_LEVEL: usize = 6;
@@ -275,6 +283,35 @@ impl Document {
             i = end;
         }
         doc
+    }
+
+    /// Версия формата из метки в первой строке. `None`, если метки нет:
+    /// такой файл читается как версия 1.
+    pub fn format_version(&self) -> Option<u32> {
+        let Some(Node::Text(text)) = self.nodes.first() else { return None };
+        let line = content(text.lines().next()?);
+        line.strip_prefix(HEADER_START)?.strip_suffix(HEADER_END)?.trim().parse().ok()
+    }
+
+    /// Ставит метку формата первой строкой, если её ещё нет.
+    pub fn ensure_header(&mut self) {
+        if self.format_version().is_some() {
+            return;
+        }
+        let gap = if self.nodes.is_empty() { "" } else { self.eol };
+        let header = format!("{HEADER_START}{FORMAT_VERSION}{HEADER_END}{eol}{gap}", eol = self.eol);
+        self.nodes.insert(0, Node::Text(header));
+    }
+
+    /// В документе нет ни записей, ни разделов, ни текста, кроме метки формата.
+    pub fn is_blank(&self) -> bool {
+        let markdown = self.to_markdown();
+        let mut lines = markdown.trim_start_matches('\u{feff}').lines();
+        let first = lines.clone().next().unwrap_or_default();
+        if first.starts_with(HEADER_START) {
+            lines.next();
+        }
+        lines.all(|line| line.trim().is_empty())
     }
 
     pub fn to_markdown(&self) -> String {

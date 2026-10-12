@@ -238,8 +238,9 @@ pub fn stats(doc: &Document) -> Stats {
 /// становятся заметкой, потому что вне исходного файла им негде жить.
 pub fn merge_into(target: &mut Document, imported: &Document) -> Result<usize, FormatError> {
     let entries = imported.entries();
-    if target.entries().is_empty() && target.to_markdown().trim().is_empty() {
+    if target.is_blank() {
         *target = imported.clone();
+        target.ensure_header();
         return Ok(entries.len());
     }
     let mut work = target.clone();

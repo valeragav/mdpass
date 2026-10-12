@@ -58,6 +58,9 @@ impl From<VaultError> for CommandError {
             VaultError::Damaged(detail) => Self::Damaged { detail },
             VaultError::ChangedOnDisk => Self::ChangedOnDisk,
             VaultError::PassphraseRequired => Self::PassphraseRequired,
+            VaultError::NewerFormat(version) => Self::Invalid {
+                message: format!("Файл записан более новой версией mdpass (формат {version}). Обновите приложение"),
+            },
             VaultError::Io(err) if err.kind() == std::io::ErrorKind::NotFound => Self::NotFound,
             VaultError::Io(err) => Self::Io { message: err.to_string() },
         }

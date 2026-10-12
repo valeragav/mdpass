@@ -118,7 +118,7 @@ fn import_into_an_empty_vault_keeps_the_file_layout() {
     let result = analyze(SOURCE, Fixes::default()).result;
     let mut vault = Document::default();
     assert_eq!(merge_into(&mut vault, &result).unwrap(), 5);
-    assert_eq!(vault.to_markdown(), result.to_markdown());
+    assert_eq!(vault.to_markdown(), format!("<!-- mdpass:1 -->\n\n{}", result.to_markdown()));
 }
 
 #[test]
