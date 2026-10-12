@@ -1,5 +1,5 @@
 use mdpass_core::format::{Document, EntryDraft, Field};
-use mdpass_core::importer::{Fixes, IssueKind, analyze, merge_into, stats};
+use mdpass_core::importer::{Fixes, IssueKind, analyze, convert_legacy_entries, merge_into, stats};
 
 /// Выдуманный открытый файл с теми же неровностями, что бывают в ручных заметках.
 const SOURCE: &str = "\
@@ -70,17 +70,33 @@ fn fixes_clean_the_document() {
     assert_eq!((notes[0].key.as_str(), notes[0].value.as_str()), ("note", "таблицу tmp можно удалять"));
 
     let md = result.to_markdown();
+    assert!(md.contains("**vps1 (инфра)**\nssh: deploy@203.0.113.10\n"), "{md}");
     assert!(md.contains("ssh: deploy@198.51.100.24\n"), "{md}");
     assert!(md.contains("строка без ключа\n"), "строки без ключа не теряются");
-    assert!(!md.contains("## заметки"));
+    assert!(!md.contains("заметки"));
 }
 
 #[test]
-fn unchecked_fixes_leave_the_file_as_it_was() {
+fn unchecked_fixes_only_turn_entry_headings_bold() {
     let none = Fixes { legacy_tags: false, duplicate_notes: false, empty_sections: false, missing_space: false };
     let analysis = analyze(SOURCE, none);
     assert_eq!(analysis.issues.len(), 4, "проблемы показываются, даже если их не исправлять");
-    assert_eq!(analysis.result.to_markdown(), SOURCE);
+    let expected = SOURCE
+        .replace("### vps1 (инфра)", "**vps1 (инфра)**")
+        .replace("### vps2 (бизнес)", "**vps2 (бизнес)**")
+        .replace("### БД анкеты", "**БД анкеты**")
+        .replace("### leading", "**leading**")
+        .replace("### почта", "**почта**")
+        .replace("## заметки", "**заметки**");
+    assert_eq!(analysis.result.to_markdown(), expected);
+}
+
+#[test]
+fn files_in_the_new_format_are_not_converted() {
+    let source = "# work\n\n## server\n\n**a**\nk: v\n\n# пустой раздел\n";
+    assert_eq!(convert_legacy_entries(source), source.replace("# пустой раздел", "**пустой раздел**"));
+    let nested = "# work\n## server\n**a**\nk: v\n";
+    assert_eq!(convert_legacy_entries(nested), nested);
 }
 
 #[test]

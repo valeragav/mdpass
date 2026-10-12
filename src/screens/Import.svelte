@@ -92,8 +92,7 @@
         }
       });
       last = place.path.slice();
-      const level = Math.max(3, place.path.length + 1);
-      rows.push({ key: `e${n}`, depth: place.path.length, hashes: "#".repeat(level), label: place.title, entry: true });
+      rows.push({ key: `e${n}`, depth: place.path.length, hashes: "", label: `**${place.title}**`, entry: true });
     });
     return rows;
   });

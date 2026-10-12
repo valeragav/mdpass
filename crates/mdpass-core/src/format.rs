@@ -1,9 +1,9 @@
 //! Формат хранилища: обычный Markdown.
 //!
 //! ```text
-//! # work                 ← раздел
+//! # work                 ← раздел, до шести уровней: # … ######
 //! ## server              ← вложенный раздел
-//! ### vps1               ← запись: заголовок без вложенных заголовков
+//! **vps1**               ← запись: строка с названием жирным
 //! ssh: user@host         ← поле «ключ: значение»
 //! password: ••••         ← секретное по имени ключа
 //! pin_hint!: ••••        ← секретное по пометке «!»
@@ -11,6 +11,9 @@
 //!   вторая строка        ← продолжение значения, отступ в два пробела
 //! tags: [work], [prod]   ← теги
 //! ```
+//!
+//! Заголовки — только разделы. Запись принадлежит последнему открытому разделу.
+//! Записи до первого заголовка лежат на верхнем уровне.
 //!
 //! Документ хранит исходный текст каждого куска файла. Записи, которые не менялись,
 //! выводятся как были, поэтому файл без правок после разбора и сборки совпадает
@@ -20,11 +23,8 @@ use std::fmt;
 
 use zeroize::Zeroize;
 
-/// Самый глубокий заголовок Markdown.
+/// Самый глубокий заголовок Markdown: столько уровней разделов бывает.
 const MAX_LEVEL: usize = 6;
-/// Новые записи пишутся заголовком не мельче `###`, чтобы в файле их было легко отличить
-/// от разделов.
-const MIN_ENTRY_LEVEL: usize = 3;
 const TAGS_KEY: &str = "tags";
 const SECRET_MARKER: char = '!';
 /// Ключ секретный, если содержит одно из этих слов…
@@ -108,6 +108,8 @@ pub struct EntryDraft {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FormatError {
     EmptyTitle,
+    /// Название записи начинается или кончается звёздочкой: в файле его не отличить от жирного.
+    InvalidTitle,
     LineBreakInName,
     EmptySection,
     TooDeep,
@@ -124,9 +126,10 @@ impl fmt::Display for FormatError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyTitle => write!(f, "У записи нет названия"),
+            Self::InvalidTitle => write!(f, "Название записи не может начинаться или кончаться звёздочкой"),
             Self::LineBreakInName => write!(f, "Название раздела или записи должно быть в одну строку"),
             Self::EmptySection => write!(f, "Пустое название раздела"),
-            Self::TooDeep => write!(f, "Слишком много вложенных разделов: можно не больше {}", MAX_LEVEL - 1),
+            Self::TooDeep => write!(f, "Слишком много вложенных разделов: можно не больше {MAX_LEVEL}"),
             Self::InvalidKey(key) => write!(
                 f,
                 "Недопустимый ключ поля «{key}»: нужен непустой ключ без пробелов, «:» и «!» на конце, кроме «{TAGS_KEY}»"
@@ -195,7 +198,6 @@ struct Section {
 #[derive(Clone)]
 struct EntryNode {
     id: EntryId,
-    level: usize,
     title: String,
     fields: Vec<Field>,
     tags: Vec<String>,
@@ -212,6 +214,24 @@ impl Default for Document {
     }
 }
 
+/// Чем начинается кусок файла.
+enum LineKind {
+    Heading(usize, String),
+    Title(String),
+    Other,
+}
+
+fn line_kind(line: &str) -> LineKind {
+    let line = content(line);
+    if let Some((level, title)) = heading_of(line) {
+        LineKind::Heading(level, title)
+    } else if let Some(title) = entry_title_of(line) {
+        LineKind::Title(title.to_string())
+    } else {
+        LineKind::Other
+    }
+}
+
 impl Document {
     pub fn parse(input: &str) -> Self {
         let (bom, text) = match input.strip_prefix('\u{feff}') {
@@ -222,38 +242,37 @@ impl Document {
         let mut doc = Self { bom, eol, nodes: Vec::new(), next_id: 0 };
 
         let lines: Vec<&str> = text.split_inclusive('\n').collect();
-        let headings: Vec<(usize, usize, String)> = lines
-            .iter()
-            .enumerate()
-            .filter_map(|(i, line)| parse_heading(content(line)).map(|(level, title)| (i, level, title)))
-            .collect();
+        let kinds: Vec<LineKind> = lines.iter().map(|line| line_kind(line)).collect();
+        let starts_piece = |i: usize| !matches!(kinds[i], LineKind::Other);
+        let piece_end = |from: usize| (from..lines.len()).find(|&i| starts_piece(i)).unwrap_or(lines.len());
 
-        let first = headings.first().map_or(lines.len(), |h| h.0);
-        if first > 0 {
-            doc.nodes.push(Node::Text(lines[..first].concat()));
+        let mut i = piece_end(0);
+        if i > 0 {
+            doc.nodes.push(Node::Text(lines[..i].concat()));
         }
-
-        for (n, (start, level, title)) in headings.iter().enumerate() {
-            let next = headings.get(n + 1);
-            let end = next.map_or(lines.len(), |h| h.0);
-            let body = &lines[start + 1..end];
-            let is_entry = next.is_none_or(|h| h.1 <= *level);
-            if is_entry {
-                let id = doc.new_id();
-                let mut entry = parse_entry(id, *level, title.clone(), body);
-                entry.raw = Some(lines[*start..end].concat());
-                doc.nodes.push(Node::Entry(entry));
-            } else {
-                let blanks = body.iter().take_while(|line| is_blank(line)).count();
-                doc.nodes.push(Node::Section(Section {
-                    level: *level,
-                    title: title.clone(),
-                    raw: lines[*start..start + 1 + blanks].concat(),
-                }));
-                if blanks < body.len() {
-                    doc.nodes.push(Node::Text(body[blanks..].concat()));
+        while i < lines.len() {
+            let end = piece_end(i + 1);
+            match &kinds[i] {
+                LineKind::Heading(level, title) => {
+                    let blanks = lines[i + 1..end].iter().take_while(|line| is_blank(line)).count();
+                    doc.nodes.push(Node::Section(Section {
+                        level: *level,
+                        title: title.clone(),
+                        raw: lines[i..i + 1 + blanks].concat(),
+                    }));
+                    if i + 1 + blanks < end {
+                        doc.nodes.push(Node::Text(lines[i + 1 + blanks..end].concat()));
+                    }
                 }
+                LineKind::Title(title) => {
+                    let id = doc.new_id();
+                    let mut entry = parse_entry(id, title.clone(), &lines[i + 1..end]);
+                    entry.raw = Some(lines[i..end].concat());
+                    doc.nodes.push(Node::Entry(entry));
+                }
+                LineKind::Other => unreachable!("кусок начинается с заголовка или названия записи"),
             }
+            i = end;
         }
         doc
     }
@@ -317,7 +336,7 @@ impl Document {
         } else {
             let extra = std::mem::take(&mut entry.extra);
             work.nodes.remove(index);
-            work.remove_empty_sections();
+            work.remove_if_empty(&current_path);
             work.insert_entry(id, draft, extra)?;
         }
         *self = work;
@@ -354,7 +373,8 @@ impl Document {
     }
 
     /// Переносит запись в раздел `path`: перед записью `before`, если она лежит в этом
-    /// разделе, иначе в конец раздела. Недостающие разделы создаются, опустевшие убираются.
+    /// разделе, иначе в конец раздела. Недостающие разделы создаются, опустевший
+    /// раздел, откуда ушла запись, убирается.
     pub fn move_entry(&mut self, id: EntryId, path: Vec<String>, before: Option<EntryId>) -> Result<(), FormatError> {
         let path = normalize_path(path)?;
         let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
@@ -362,23 +382,14 @@ impl Document {
             return Ok(());
         }
         let mut work = self.clone();
-        let Node::Entry(mut entry) = work.nodes.remove(index) else { unreachable!("индекс записи") };
-        work.remove_empty_sections();
+        let origin = work.node_paths().swap_remove(index);
+        let entry = work.nodes.remove(index);
+        work.remove_if_empty(&origin);
         let parent = work.ensure_section(&path)?;
         let paths = work.node_paths();
         let target = before.and_then(|b| work.entry_index(b)).filter(|&i| paths[i] == path);
-        let (pos, level) = match target {
-            Some(i) => (i, work.heading_level(i).unwrap_or(MIN_ENTRY_LEVEL)),
-            None => work.entry_slot(parent),
-        };
-        if level > MAX_LEVEL {
-            return Err(FormatError::TooDeep);
-        }
-        if let Some(raw) = &mut entry.raw {
-            relevel(raw, entry.level, level);
-        }
-        entry.level = level;
-        let index = work.insert_spaced(pos, Node::Entry(entry));
+        let pos = target.unwrap_or_else(|| work.entry_slot(parent));
+        let index = work.insert_spaced(pos, entry);
         work.close_gap_after(index);
         *self = work;
         Ok(())
@@ -386,7 +397,7 @@ impl Document {
 
     /// Переносит раздел со всем содержимым в раздел `parent` (пустой — верхний
     /// уровень): перед разделом-соседом `before` или в конец. Уровни заголовков
-    /// внутри сдвигаются, записи остаются не мельче `###`.
+    /// разделов внутри сдвигаются, записи остаются как были.
     pub fn move_section(
         &mut self,
         path: &[String],
@@ -398,7 +409,8 @@ impl Document {
         }
         let start = self.section_index(path).ok_or(FormatError::NotFound)?;
         let title = path.last().cloned().ok_or(FormatError::NotFound)?;
-        if parent != &path[..path.len() - 1] {
+        let origin = &path[..path.len() - 1];
+        if parent != origin {
             let mut target = parent.to_vec();
             target.push(title.clone());
             if self.section_index(&target).is_some() {
@@ -409,33 +421,20 @@ impl Document {
         let mut work = self.clone();
         let end = work.subtree_end(start);
         let mut chunk: Vec<Node> = work.nodes.drain(start..end).collect();
-        work.remove_empty_sections();
+        work.remove_if_empty(origin);
         let parent_index = work.ensure_section(parent)?;
-        let parent_level = parent_index.and_then(|p| work.heading_level(p)).unwrap_or(0);
+        let parent_level = parent_index.and_then(|p| work.section_level(p)).unwrap_or(0);
 
         let Some(Node::Section(head)) = chunk.first() else { unreachable!("раздел") };
         let delta = (parent_level + 1) as isize - head.level as isize;
         for node in &mut chunk {
-            match node {
-                Node::Section(section) => {
-                    let level = section.level as isize + delta;
-                    if !(1..=MAX_LEVEL as isize).contains(&level) {
-                        return Err(FormatError::TooDeep);
-                    }
-                    relevel(&mut section.raw, section.level, level as usize);
-                    section.level = level as usize;
+            if let Node::Section(section) = node {
+                let level = section.level as isize + delta;
+                if !(1..=MAX_LEVEL as isize).contains(&level) {
+                    return Err(FormatError::TooDeep);
                 }
-                Node::Entry(entry) => {
-                    let level = (entry.level as isize + delta).max(MIN_ENTRY_LEVEL as isize);
-                    if level > MAX_LEVEL as isize {
-                        return Err(FormatError::TooDeep);
-                    }
-                    if let Some(raw) = &mut entry.raw {
-                        relevel(raw, entry.level, level as usize);
-                    }
-                    entry.level = level as usize;
-                }
-                Node::Text(_) => {}
+                relevel(&mut section.raw, section.level, level as usize);
+                section.level = level as usize;
             }
         }
 
@@ -456,8 +455,9 @@ impl Document {
 
     pub fn remove(&mut self, id: EntryId) -> Result<(), FormatError> {
         let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+        let path = self.node_paths().swap_remove(index);
         self.nodes.remove(index);
-        self.remove_empty_sections();
+        self.remove_if_empty(&path);
         Ok(())
     }
 
@@ -491,53 +491,49 @@ impl Document {
         self.nodes
             .iter()
             .map(|node| match node {
-                Node::Text(_) => titles(&stack),
                 Node::Section(s) => {
                     stack.retain(|(level, _)| *level < s.level);
                     stack.push((s.level, s.title.clone()));
                     titles(&stack)
                 }
-                Node::Entry(e) => {
-                    stack.retain(|(level, _)| *level < e.level);
-                    titles(&stack)
-                }
+                Node::Text(_) | Node::Entry(_) => titles(&stack),
             })
             .collect()
     }
 
-    fn heading_level(&self, index: usize) -> Option<usize> {
+    fn section_level(&self, index: usize) -> Option<usize> {
         match &self.nodes[index] {
             Node::Section(s) => Some(s.level),
-            Node::Entry(e) => Some(e.level),
-            Node::Text(_) => None,
+            _ => None,
         }
     }
 
-    /// Конец раздела: первый заголовок того же уровня или выше.
+    /// Конец раздела: следующий заголовок того же уровня или выше.
     fn subtree_end(&self, index: usize) -> usize {
-        let level = self.heading_level(index).expect("раздел");
+        let level = self.section_level(index).expect("раздел");
         (index + 1..self.nodes.len())
-            .find(|&i| self.heading_level(i).is_some_and(|l| l <= level))
+            .find(|&i| self.section_level(i).is_some_and(|l| l <= level))
             .unwrap_or(self.nodes.len())
     }
 
-    fn remove_empty_sections(&mut self) {
-        loop {
-            let empty = (0..self.nodes.len()).find(|&i| {
-                matches!(self.nodes[i], Node::Section(_))
-                    && !self.nodes[i + 1..self.subtree_end(i)].iter().any(|node| match node {
-                        Node::Entry(_) => true,
-                        Node::Text(text) => !text.trim().is_empty(),
-                        Node::Section(_) => false,
-                    })
-            });
-            match empty {
-                Some(i) => {
-                    let end = self.subtree_end(i);
-                    self.nodes.drain(i..end);
-                }
-                None => break,
+    fn is_empty_section(&self, index: usize) -> bool {
+        !self.nodes[index + 1..self.subtree_end(index)].iter().any(|node| match node {
+            Node::Entry(_) => true,
+            Node::Text(text) => !text.trim().is_empty(),
+            Node::Section(_) => false,
+        })
+    }
+
+    /// Убирает раздел `path` и его родителей, если в них не осталось ни записей, ни текста.
+    /// Другие пустые разделы не трогает: их мог завести сам пользователь.
+    fn remove_if_empty(&mut self, path: &[String]) {
+        for depth in (1..=path.len()).rev() {
+            let Some(index) = self.section_index(&path[..depth]) else { continue };
+            if !self.is_empty_section(index) {
+                break;
             }
+            let end = self.subtree_end(index);
+            self.nodes.drain(index..end);
         }
     }
 
@@ -569,9 +565,7 @@ impl Document {
             Node::Entry(entry) => match &mut entry.raw {
                 Some(raw) => raw,
                 None => {
-                    if has_next {
-                        entry.trailing_blank = entry.trailing_blank.max(1);
-                    }
+                    entry.trailing_blank = if has_next { entry.trailing_blank.max(1) } else { 0 };
                     return;
                 }
             },
@@ -591,13 +585,9 @@ impl Document {
 
     fn insert_entry(&mut self, id: EntryId, draft: EntryDraft, extra: Vec<String>) -> Result<(), FormatError> {
         let parent = self.ensure_section(&draft.path)?;
-        let (pos, level) = self.entry_slot(parent);
-        if level > MAX_LEVEL {
-            return Err(FormatError::TooDeep);
-        }
+        let pos = self.entry_slot(parent);
         let entry = EntryNode {
             id,
-            level,
             title: draft.title,
             fields: draft.fields,
             tags: draft.tags,
@@ -606,16 +596,13 @@ impl Document {
             raw: None,
         };
         let index = self.insert_spaced(pos, Node::Entry(entry));
-        let has_next = index + 1 < self.nodes.len();
-        if let Node::Entry(entry) = &mut self.nodes[index] {
-            entry.trailing_blank = usize::from(has_next);
-        }
+        self.close_gap_after(index);
         Ok(())
     }
 
     /// Добавляет раздел в конец родителя и возвращает его позицию.
     fn create_section(&mut self, parent: Option<usize>, title: &str) -> Result<usize, FormatError> {
-        let level = parent.and_then(|p| self.heading_level(p)).map_or(1, |l| l + 1);
+        let level = parent.and_then(|p| self.section_level(p)).map_or(1, |l| l + 1);
         if level > MAX_LEVEL {
             return Err(FormatError::TooDeep);
         }
@@ -624,22 +611,20 @@ impl Document {
         Ok(self.insert_spaced(pos, Node::Section(Section { level, title: title.to_string(), raw })))
     }
 
-    /// Куда встаёт новая запись раздела и каким заголовком: после последней записи
-    /// раздела её же уровнем, а если записей нет — перед первым вложенным заголовком.
-    fn entry_slot(&self, parent: Option<usize>) -> (usize, usize) {
-        let (start, end, parent_level) = match parent {
-            Some(p) => (p + 1, self.subtree_end(p), self.heading_level(p).unwrap_or(0)),
-            None => (0, self.nodes.len(), 0),
+    /// Куда встаёт новая запись раздела: после его последней записи, а если записей
+    /// нет — перед первым вложенным разделом. Записи верхнего уровня стоят до первого
+    /// заголовка: после него запись уже принадлежала бы разделу.
+    fn entry_slot(&self, parent: Option<usize>) -> usize {
+        let (start, end) = match parent {
+            Some(p) => (p + 1, self.subtree_end(p)),
+            None => (0, self.nodes.len()),
         };
         let paths = self.node_paths();
         let parent_path = parent.map_or_else(Vec::new, |p| paths[p].clone());
         let last_own = (start..end).rev().find(|&i| matches!(self.nodes[i], Node::Entry(_)) && paths[i] == parent_path);
         match last_own {
-            Some(i) => (i + 1, self.heading_level(i).unwrap_or(MIN_ENTRY_LEVEL)),
-            None => {
-                let pos = (start..end).find(|&i| self.heading_level(i).is_some()).unwrap_or(end);
-                (pos, (parent_level + 1).max(MIN_ENTRY_LEVEL))
-            }
+            Some(i) => i + 1,
+            None => (start..end).find(|&i| self.section_level(i).is_some()).unwrap_or(end),
         }
     }
 
@@ -664,7 +649,7 @@ impl Document {
 }
 
 /// Строка без перевода строки на конце.
-fn content(line: &str) -> &str {
+pub(crate) fn content(line: &str) -> &str {
     let line = line.strip_suffix('\n').unwrap_or(line);
     line.strip_suffix('\r').unwrap_or(line)
 }
@@ -673,7 +658,8 @@ fn is_blank(line: &str) -> bool {
     line.trim().is_empty()
 }
 
-fn parse_heading(line: &str) -> Option<(usize, String)> {
+/// Уровень и название заголовка `## раздел`.
+pub(crate) fn heading_of(line: &str) -> Option<(usize, String)> {
     let level = line.bytes().take_while(|&b| b == b'#').count();
     if level == 0 || level > MAX_LEVEL {
         return None;
@@ -691,6 +677,14 @@ fn parse_heading(line: &str) -> Option<(usize, String)> {
         title = without_closing.trim_end();
     }
     Some((level, title.to_string()))
+}
+
+/// Название записи из строки `**название**`. Строка должна начинаться с начала:
+/// продолжения значений идут с отступом и записью не считаются.
+pub(crate) fn entry_title_of(line: &str) -> Option<&str> {
+    let line = line.trim_end();
+    let inner = line.strip_prefix("**")?.strip_suffix("**")?.trim();
+    (!inner.is_empty() && !inner.starts_with('*') && !inner.ends_with('*')).then_some(inner)
 }
 
 enum FieldLine {
@@ -731,7 +725,7 @@ fn parse_tags(value: &str) -> Vec<String> {
         .collect()
 }
 
-fn parse_entry(id: EntryId, level: usize, title: String, body: &[&str]) -> EntryNode {
+fn parse_entry(id: EntryId, title: String, body: &[&str]) -> EntryNode {
     let mut fields: Vec<Field> = Vec::new();
     let mut tags = Vec::new();
     let mut extra = Vec::new();
@@ -762,13 +756,13 @@ fn parse_entry(id: EntryId, level: usize, title: String, body: &[&str]) -> Entry
         }
     }
     let trailing_blank = body.iter().rev().take_while(|line| is_blank(line)).count();
-    EntryNode { id, level, title, fields, tags, extra, trailing_blank, raw: None }
+    EntryNode { id, title, fields, tags, extra, trailing_blank, raw: None }
 }
 
 fn render_entry(entry: &EntryNode, eol: &str, out: &mut String) {
-    out.push_str(&"#".repeat(entry.level));
-    out.push(' ');
+    out.push_str("**");
     out.push_str(&entry.title);
+    out.push_str("**");
     out.push_str(eol);
 
     // Теги пишутся перед заметкой, если она есть, иначе в конце полей.
@@ -835,7 +829,7 @@ fn normalize_path(parts: Vec<String>) -> Result<Vec<String>, FormatError> {
         }
         path.push(part.to_string());
     }
-    if path.len() >= MAX_LEVEL {
+    if path.len() > MAX_LEVEL {
         return Err(FormatError::TooDeep);
     }
     Ok(path)
@@ -857,6 +851,9 @@ fn normalize(draft: EntryDraft) -> Result<EntryDraft, FormatError> {
     if title.contains(['\n', '\r']) {
         return Err(FormatError::LineBreakInName);
     }
+    if title.starts_with('*') || title.ends_with('*') {
+        return Err(FormatError::InvalidTitle);
+    }
 
     let path = normalize_path(draft.path)?;
 
@@ -867,6 +864,7 @@ fn normalize(draft: EntryDraft) -> Result<EntryDraft, FormatError> {
             && !key.contains(|c: char| c.is_whitespace() || c == ':')
             && !key.ends_with(SECRET_MARKER)
             && !key.starts_with('#')
+            && !key.starts_with('*')
             && !key.eq_ignore_ascii_case(TAGS_KEY);
         if !valid {
             return Err(FormatError::InvalidKey(key.to_string()));

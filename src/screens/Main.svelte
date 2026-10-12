@@ -74,7 +74,7 @@
         <div class="sample">
           <div class="sample-head mono">Так выглядит запись в файле {app.vault?.name.replace(/\.age$/, "")}</div>
           <div class="sample-body mono">
-            <div><span class="p">### </span><span class="k">название</span></div>
+            <div><span class="k">**название**</span></div>
             <div><span class="k">ssh:</span> user@host</div>
             <div><span class="k">password:</span> <span class="muted">••••••••</span></div>
             <div><span class="k">tags:</span> [work], [prod]</div>
@@ -177,10 +177,6 @@
     padding: 14px 18px;
     font-size: 13px;
     line-height: 22px;
-  }
-
-  .p {
-    color: var(--text-faint);
   }
 
   .k {
