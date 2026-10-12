@@ -60,6 +60,23 @@ fn field_value(session: &Session, entry_id: u64, field: usize) -> Result<Zeroizi
     Ok(Zeroizing::new(field.value.clone()))
 }
 
+/// Что положить в буфер. Поле `ssh` копируется готовой командой `ssh user@host`,
+/// чтобы её сразу можно было вставить в терминал.
+fn clipboard_text(key: &str, value: Zeroizing<String>) -> Zeroizing<String> {
+    let value_is_command = value.trim_start().starts_with("ssh ");
+    if key.eq_ignore_ascii_case("ssh") && !value_is_command && !value.trim().is_empty() {
+        Zeroizing::new(format!("ssh {}", value.trim()))
+    } else {
+        value
+    }
+}
+
+fn field_key(session: &Session, entry_id: u64, field: usize) -> Result<String, CommandError> {
+    let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
+    let entry = vault.document().entry(EntryId::from_raw(entry_id)).ok_or(CommandError::EntryNotFound)?;
+    Ok(entry.fields.get(field).ok_or(CommandError::EntryNotFound)?.key.clone())
+}
+
 #[tauri::command]
 pub fn entries(state: State<'_, AppState>) -> Result<Vec<EntryView>, CommandError> {
     let session = state.lock();
@@ -76,7 +93,7 @@ pub fn reveal_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> 
 #[tauri::command]
 pub fn copy_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> Result<(), CommandError> {
     let session = state.lock();
-    let value = field_value(&session, entry_id, field)?;
+    let value = clipboard_text(&field_key(&session, entry_id, field)?, field_value(&session, entry_id, field)?);
     #[cfg(desktop)]
     {
         crate::clipboard::copy(value, session.clipboard_clear_after())
@@ -198,4 +215,27 @@ pub async fn delete_entry(state: State<'_, AppState>, entry_id: u64) -> Result<(
 #[tauri::command]
 pub fn generate_password(length: Option<usize>) -> String {
     password::generate(length.unwrap_or(password::DEFAULT_LENGTH)).as_str().to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn text(key: &str, value: &str) -> String {
+        clipboard_text(key, Zeroizing::new(value.to_string())).as_str().to_owned()
+    }
+
+    #[test]
+    fn ssh_field_is_copied_as_a_command() {
+        assert_eq!(text("ssh", "deploy@203.0.113.10"), "ssh deploy@203.0.113.10");
+        assert_eq!(text("SSH", " deploy@host "), "ssh deploy@host");
+    }
+
+    #[test]
+    fn ready_commands_and_other_fields_are_copied_as_is() {
+        assert_eq!(text("ssh", "ssh -p 2222 deploy@host"), "ssh -p 2222 deploy@host");
+        assert_eq!(text("ssh", ""), "");
+        assert_eq!(text("login", "deploy@host"), "deploy@host");
+        assert_eq!(text("password", "ssh x"), "ssh x");
+    }
 }

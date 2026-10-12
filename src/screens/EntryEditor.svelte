@@ -257,7 +257,6 @@
                 id="title"
                 class="input"
                 bind:value={title}
-                placeholder="Например, vps3 (стейдж)"
                 autofocus={!entry}
               />
             </div>

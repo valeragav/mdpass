@@ -45,7 +45,13 @@
       await api.copyField(entry.id, index);
       const clear = app.settings.clipboardClearSeconds;
       const after = clear > 0 ? ` · буфер очистится через ${clear} с` : "";
-      showToast((field.secret ? "Секрет скопирован" : `Скопировано: ${field.key}`) + after);
+      // Поле ssh Rust копирует готовой командой «ssh user@host».
+      const what = field.secret
+        ? "Секрет скопирован"
+        : field.key.toLowerCase() === "ssh"
+          ? "Скопирована команда ssh"
+          : `Скопировано: ${field.key}`;
+      showToast(what + after);
     } catch (err) {
       showToast(errorText(err));
     }

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Иконка приложения: ключ из логотипа mdpass на тёмном фоне темы -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" fill="#15181D"/>
+  <g transform="translate(152 152) scale(30)" fill="none" stroke="#E5A93D" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="8" cy="15" r="4"/>
+    <path d="M11 12l9-9"/>
+    <path d="M16 7l3 3"/>
+    <path d="M14 9l2 2"/>
+  </g>
+</svg>
