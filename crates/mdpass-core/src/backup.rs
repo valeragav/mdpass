@@ -117,6 +117,16 @@ impl BackupStore {
         fs::copy(self.path_of(id)?, to).map(drop)
     }
 
+    /// Переносит копии к хранилищу с новым именем файла. Если у нового имени
+    /// уже есть своя папка копий, ничего не трогает.
+    pub fn move_to(&self, vault_path: &Path) -> io::Result<Self> {
+        let target = Self::for_vault(vault_path);
+        if self.dir.exists() && !target.dir.exists() {
+            fs::rename(&self.dir, &target.dir)?;
+        }
+        Ok(target)
+    }
+
     /// Удаляет старые копии, оставляя `keep` самых новых.
     pub fn prune(&self, keep: usize) -> io::Result<()> {
         for old in self.list()?.into_iter().skip(keep) {

@@ -234,3 +234,14 @@ fn damaged_open_vault_is_restored_without_a_passphrase() {
     assert!(!restored.is_encrypted());
     assert_eq!(restored.document().entries()[0].title, "alpha");
 }
+
+#[test]
+fn backups_follow_a_renamed_vault() {
+    let dir = TempDir::new().unwrap();
+    let old = BackupStore::for_vault(&dir.path().join("vault.md"));
+    old.save(b"a", BackupKind::Update, at(0)).unwrap();
+    let moved = old.move_to(&dir.path().join("vault.md.age")).unwrap();
+    assert_eq!(moved.dir(), dir.path().join(".vault.md.age.backups"));
+    assert_eq!(moved.list().unwrap().len(), 1);
+    assert!(!old.dir().exists());
+}

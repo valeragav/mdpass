@@ -49,12 +49,12 @@
     error = null;
     wrongCurrent = false;
     try {
-      app.protection = await api.changeProtection(
-        encryptedNow ? current : null,
-        encryptNext ? next : null,
-        protection,
-      );
-      showToast(encryptNext ? `${PROTECTION_LABEL[protection]}: файл зашифрован заново` : "Шифрование выключено");
+      const before = app.vault?.name;
+      const changed = await api.changeProtection(encryptedNow ? current : null, encryptNext ? next : null, protection);
+      app.protection = changed.protection;
+      app.vault = changed.vault;
+      const what = encryptNext ? `${PROTECTION_LABEL[protection]}: файл зашифрован заново` : "Шифрование выключено";
+      showToast(changed.vault.name !== before ? `${what}, файл теперь ${changed.vault.name}` : what);
       close();
     } catch (err) {
       wrongCurrent = isCommandError(err) && (err.kind === "wrongPassphrase" || err.kind === "tooSoon");

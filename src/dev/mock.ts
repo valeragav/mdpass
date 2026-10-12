@@ -225,7 +225,10 @@ mockIPC(
       if (n.protection !== "none" && (n.new ?? "").length < 8)
         throw { kind: "invalid", message: "Мастер-пароль должен быть не короче 8 символов" };
       protection = n.protection;
-      return protection;
+      if (lastVault) {
+        lastVault = protection === "none" ? lastVault.replace(/\.age$/, "") : lastVault.replace(/(\.md)?$/, ".md.age").replace(".md.age.md.age", ".md.age");
+      }
+      return { protection, vault: { ...describe(lastVault ?? ""), encrypted: protection !== "none", exists: true } };
     }
     case "update_settings":
       settings = (args as { settings: typeof settings }).settings;

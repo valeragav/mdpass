@@ -256,3 +256,34 @@ fn protection_can_be_turned_on_and_off() {
     assert!(fs::read_to_string(&path).unwrap().contains("**alpha**"));
     assert!(!vault.passphrase_matches(&pass("новый-пароль")));
 }
+
+#[test]
+fn file_name_follows_protection() {
+    let dir = TempDir::new().unwrap();
+    let plain_path = dir.path().join("vault.md");
+    let mut vault = Vault::create_plain(&plain_path).unwrap();
+    assert_eq!(vault.conventional_path(), plain_path);
+
+    vault.set_protection(Some((pass("новый-пароль"), FAST)), |_| Ok(())).unwrap();
+    let encrypted_path = dir.path().join("vault.md.age");
+    assert_eq!(vault.conventional_path(), encrypted_path);
+    vault.rename_to(&encrypted_path).unwrap();
+    assert!(encrypted_path.exists() && !plain_path.exists());
+    assert_eq!(vault.path(), encrypted_path);
+    vault.save().unwrap();
+
+    vault.set_protection(None, |_| Ok(())).unwrap();
+    assert_eq!(vault.conventional_path(), plain_path);
+}
+
+#[test]
+fn rename_does_not_overwrite_another_file() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md");
+    let mut vault = Vault::create_plain(&path).unwrap();
+    let other = dir.path().join("vault.md.age");
+    fs::write(&other, "чужой").unwrap();
+    assert!(matches!(vault.rename_to(&other), Err(VaultError::AlreadyExists)));
+    assert_eq!(fs::read_to_string(&other).unwrap(), "чужой");
+    assert_eq!(vault.path(), path);
+}

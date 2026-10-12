@@ -261,6 +261,31 @@ impl Vault {
         Ok(())
     }
 
+    /// Имя файла, которое подходит к защите: `vault.md.age` для зашифрованного,
+    /// `vault.md` для открытого. Если имя уже подходит, возвращает текущий путь.
+    pub fn conventional_path(&self) -> PathBuf {
+        let name = self.path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
+        let wanted = match (self.is_encrypted(), name.strip_suffix(".age")) {
+            (true, None) => format!("{name}.age"),
+            (false, Some(plain)) if !plain.is_empty() => plain.to_string(),
+            _ => return self.path.clone(),
+        };
+        self.path.with_file_name(wanted)
+    }
+
+    /// Переименовывает файл хранилища. Чужой файл с таким именем не перезаписывается.
+    pub fn rename_to(&mut self, path: &Path) -> Result<(), VaultError> {
+        if path == self.path {
+            return Ok(());
+        }
+        if path.exists() {
+            return Err(VaultError::AlreadyExists);
+        }
+        fs::rename(&self.path, path)?;
+        self.path = path.to_path_buf();
+        Ok(())
+    }
+
     fn replace_file(&mut self, bytes: Vec<u8>, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<(), VaultError> {
         let current = match fs::read(&self.path) {
             Ok(current) => current,

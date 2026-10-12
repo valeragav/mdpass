@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use age::secrecy::ExposeSecret;
-use mdpass_core::backup::BackupKind;
+use mdpass_core::backup::{BackupKind, BackupStore};
 use mdpass_core::vault::{Passphrase, Vault, VaultError, VaultOptions};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -252,13 +252,22 @@ const MIN_PASSPHRASE_CHARS: usize = 8;
 
 /// Меняет защиту открытого хранилища: пароль, силу шифрования или снимает шифрование.
 /// У зашифрованного хранилища сначала проверяется текущий пароль.
+/// После смены защиты файл получает подходящее имя: `vault.md.age` или `vault.md`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProtectionChanged {
+    protection: Protection,
+    vault: VaultFile,
+}
+
 #[tauri::command]
-pub async fn change_protection(
+pub async fn change_protection<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     current: Option<String>,
     new: Option<String>,
     protection: Protection,
-) -> Result<Protection, CommandError> {
+) -> Result<ProtectionChanged, CommandError> {
     let state = state.inner().clone();
     let current = current.map(Passphrase::from);
     let new = new.map(Passphrase::from);
@@ -287,7 +296,20 @@ pub async fn change_protection(
             Some(policy) => vault.set_protection(key, policy.hook(BackupKind::Passphrase))?,
             None => vault.set_protection(key, |_| Ok(()))?,
         }
-        Ok(Protection::of(vault))
+
+        // Имя файла следует за защитой. Если нужное имя занято чужим файлом,
+        // защита всё равно уже сменилась, файл просто остаётся под старым именем.
+        let old_path = vault.path().to_path_buf();
+        let wanted = vault.conventional_path();
+        if wanted != old_path && vault.rename_to(&wanted).is_ok() {
+            if let Err(err) = BackupStore::for_vault(&old_path).move_to(&wanted) {
+                eprintln!("не удалось перенести резервные копии: {err}");
+            }
+            session.config.last_vault = Some(wanted);
+            session.save_config();
+        }
+        let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
+        Ok(ProtectionChanged { protection: Protection::of(vault), vault: describe(&app, vault.path()) })
     })
     .await
 }

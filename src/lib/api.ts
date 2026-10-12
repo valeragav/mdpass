@@ -165,8 +165,9 @@ export const api = {
   unlock: (path: string, passphrase: string | null) => invoke<Protection>("unlock", { path, passphrase }),
   lock: () => invoke<void>("lock"),
   touch: () => invoke<void>("touch"),
+  /// Файл заодно переименовывается под защиту: `vault.md.age` или `vault.md`.
   changeProtection: (current: string | null, next: string | null, protection: Protection) =>
-    invoke<Protection>("change_protection", { current, new: next, protection }),
+    invoke<{ protection: Protection; vault: VaultFile }>("change_protection", { current, new: next, protection }),
   updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
   /// `path` — для файла, который не открывается; иначе копии открытого хранилища.
   listBackups: (path?: string) => invoke<BackupView[]>("list_backups", { path }),
