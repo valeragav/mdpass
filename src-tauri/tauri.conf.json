@@ -38,6 +38,8 @@
       "nsis": {
         "installerIcon": "icons/icon.ico"
       }
-    }
+    },
+    "license": "MIT",
+    "licenseFile": "../LICENSE"
   }
 }

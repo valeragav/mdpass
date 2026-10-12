@@ -5,6 +5,7 @@ members = ["src-tauri", "crates/mdpass-core"]
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

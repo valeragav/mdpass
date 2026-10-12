@@ -2,6 +2,7 @@
 name = "mdpass-core"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 description = "Ядро mdpass: формат хранилища, шифрование, резервные копии"
 
 [dependencies]
