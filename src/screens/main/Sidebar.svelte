@@ -161,6 +161,15 @@
     event.preventDefault();
   }
 
+  // Все разделы списка разом: свернуть или, если уже все свёрнуты, развернуть.
+  let groupKeys = $derived([...new Set(rows.filter((r) => r.kind === "group").map((r) => pathKey(r.path)))]);
+  let allCollapsed = $derived(groupKeys.length > 0 && groupKeys.every((key) => collapsed.has(key)));
+
+  function toggleAll() {
+    if (allCollapsed) collapsed.clear();
+    else for (const key of groupKeys) collapsed.add(key);
+  }
+
   let tagChips = $derived.by(() => {
     const counts = new Map<string, number>();
     for (const entry of vault.entries) for (const t of entry.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
@@ -364,11 +373,22 @@
           </button>
         {/each}
       </div>
-      {#if tagsOverflow || tagsOpen}
-        <button type="button" class="more-tags" aria-expanded={tagsOpen} onclick={() => (tagsOpen = !tagsOpen)}>
-          {tagsOpen ? "Свернуть теги" : `Все теги (${tagChips.length})`}
-        </button>
-      {/if}
+    {/if}
+    {#if tagsOverflow || tagsOpen || groupKeys.length > 0}
+      <div class="tools">
+        {#if tagsOverflow || tagsOpen}
+          <button type="button" class="link" aria-expanded={tagsOpen} onclick={() => (tagsOpen = !tagsOpen)}>
+            {tagsOpen ? "Свернуть теги" : `Все теги (${tagChips.length})`}
+          </button>
+        {/if}
+        {#if groupKeys.length > 0}
+          <!-- Во время поиска разделы всегда раскрыты, поэтому кнопка не нужна. -->
+          <button type="button" class="link folders" disabled={filtering} onclick={toggleAll}>
+            <Icon name="chevron" size={12} stroke={2} />
+            {allCollapsed ? "Развернуть все" : "Свернуть все"}
+          </button>
+        {/if}
+      </div>
     {/if}
   </div>
 
@@ -507,15 +527,31 @@
     overflow-y: auto;
   }
 
-  .more-tags {
-    align-self: flex-start;
+  .tools {
+    display: flex;
+    align-items: center;
+    gap: 12px;
     margin-top: -4px;
+  }
+
+  .link {
     font-size: 12px;
     color: var(--accent);
   }
 
-  .more-tags:hover {
+  .link:hover:not(:disabled) {
     text-decoration: underline;
+  }
+
+  .link:disabled {
+    color: var(--text-faint);
+  }
+
+  .folders {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
 
   .chip {

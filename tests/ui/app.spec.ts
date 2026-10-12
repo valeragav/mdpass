@@ -62,6 +62,16 @@ test("раздел сворачивается и разворачивается"
   // Стрелка у раздела сворачивает сразу.
   await server.locator(".chevron").click();
   await expect(server).toHaveAttribute("aria-expanded", "false");
+
+  // Все разделы разом.
+  await page.getByRole("button", { name: "Свернуть все" }).click();
+  for (const name of ["work", "my"]) {
+    await expect(sidebar(page).getByRole("button", { name, exact: true })).toHaveAttribute("aria-expanded", "false");
+  }
+  await expect(sidebar(page).getByRole("button", { name: /почта/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Развернуть все" }).click();
+  await expect(sidebar(page).getByRole("button", { name: /почта/ })).toBeVisible();
+  await expect(server).toHaveAttribute("aria-expanded", "true");
 });
 
 test("щелчок по разделу показывает все его записи без подразделов", async ({ page }) => {
