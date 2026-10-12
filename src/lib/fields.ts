@@ -47,6 +47,12 @@ export async function copyField(entry: EntryView, index: number) {
   }
 }
 
+/// Строка под курсором: поле записи или строка-ссылка (подраздел, название записи),
+/// которую Enter или → открывает.
+export type CursorItem = FieldRef | { open: () => void };
+
+const isField = (item: CursorItem | undefined): item is FieldRef => item !== undefined && "entry" in item;
+
 /// Номер поля под курсором среди `count` полей на экране или -1, если курсор в списке слева.
 export function fieldCursor(count: number): number {
   return keyNav.zone === "fields" && count > 0 ? Math.min(keyNav.field, count - 1) : -1;
@@ -57,9 +63,16 @@ export function pickField(pos: number) {
   keyNav.field = pos;
 }
 
-/// ↑ ↓ — по полям, ← или Esc — назад в список, Ctrl+C или Enter — скопировать,
-/// пробел — показать или скрыть секрет. Строки полей помечены `data-cursor` с номером.
-export function onFieldKey(event: KeyboardEvent, order: FieldRef[], root: HTMLElement | undefined) {
+/// ↑ ↓ — по строкам, ← или Esc — назад в список, Ctrl+C или Enter — скопировать поле,
+/// пробел — показать или скрыть секрет, Enter или → на ссылке — открыть её.
+/// Строки помечены `data-cursor` с номером.
+/// Открыть ссылку и поставить курсор на первую строку того, что открылось.
+function open(item: { open: () => void }) {
+  item.open();
+  keyNav.field = 0;
+}
+
+export function onFieldKey(event: KeyboardEvent, order: CursorItem[], root: HTMLElement | undefined) {
   if (keyNav.zone !== "fields" || !isNavKey(event)) return;
   const cursor = fieldCursor(order.length);
   const current = cursor >= 0 ? order[cursor] : undefined;
@@ -71,7 +84,7 @@ export function onFieldKey(event: KeyboardEvent, order: FieldRef[], root: HTMLEl
   if (event.ctrlKey || event.metaKey) {
     const key = event.key.toLowerCase();
     // Выделенный мышью текст Ctrl+C копирует как обычно.
-    if ((key === "c" || key === "с") && current && !window.getSelection()?.toString()) {
+    if ((key === "c" || key === "с") && isField(current) && !window.getSelection()?.toString()) {
       event.preventDefault();
       copyField(current.entry, current.index);
     }
@@ -97,10 +110,15 @@ export function onFieldKey(event: KeyboardEvent, order: FieldRef[], root: HTMLEl
       break;
     case "Enter":
       if (!current) return;
-      copyField(current.entry, current.index);
+      if (isField(current)) copyField(current.entry, current.index);
+      else open(current);
+      break;
+    case "ArrowRight":
+      if (!current || isField(current)) return;
+      open(current);
       break;
     case " ":
-      if (!current?.entry.fields[current.index].secret) return;
+      if (!isField(current) || !current.entry.fields[current.index].secret) return;
       revealField(current.entry, current.index);
       break;
     default:

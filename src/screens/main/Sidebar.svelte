@@ -103,10 +103,6 @@
     select(shown.find(isCurrent) ?? shown[0]);
   }
 
-  function hasOwnFields(path: string[]): boolean {
-    return visible.some((e) => pathKey(e.path) === pathKey(path) && e.fields.length > 0);
-  }
-
   function openFields() {
     keyNav.zone = "fields";
     keyNav.field = 0;
@@ -157,9 +153,8 @@
         break;
       case "Enter":
         if (!row) return;
-        // У раздела справа список его записей: Enter переводит курсор в их поля.
-        if (row.kind === "entry" || hasOwnFields(row.path)) openFields();
-        else toggle(row);
+        // У раздела справа его подразделы и записи: Enter переводит курсор туда.
+        openFields();
         break;
       default:
         return;

@@ -74,11 +74,12 @@ test("щелчок по разделу показывает все его зап
   }
   await expect(page.getByRole("region", { name: "example.test" })).toHaveCount(0);
 
-  // Поля всех записей раздела — под одним курсором.
+  // Курсор идёт по названиям записей раздела и их полям.
   await page.keyboard.press("Enter");
+  await expect(page.locator(".title.cursor")).toHaveText("alpha (инфра)");
+  await page.keyboard.press("ArrowDown");
   await expect(page.locator(".field.cursor")).toContainText("deploy@203.0.113.10");
-  await page.keyboard.press("ArrowDown");
-  await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
   await expect(page.locator(".field.cursor")).toContainText("deploy@198.51.100.24");
   await page.keyboard.press("Control+c");
   await expect(page.getByRole("status")).toContainText("Скопирована команда ssh");
@@ -86,9 +87,20 @@ test("щелчок по разделу показывает все его зап
   await page.getByRole("region", { name: "beta (стейдж)" }).getByRole("button", { name: "beta (стейдж)" }).click();
   await expect(page.getByRole("heading", { level: 1, name: "beta (стейдж)" })).toBeVisible();
 
-  // В разделе только подразделы.
+  // В разделе только подразделы: по ним тоже ходят стрелки, Enter или → открывает.
   await sidebar(page).getByRole("button", { name: "work", exact: true }).click();
   await expect(page.getByText("Прямо в этом разделе записей нет, только подразделы")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".sub.cursor")).toContainText("server");
+  await expect(page.locator(".sub.cursor")).toContainText("3 записи");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".sub.cursor")).toContainText("site");
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { level: 1, name: "site" })).toBeVisible();
+  await expect(page.locator(".title.cursor")).toHaveText("example.test");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("heading", { level: 1, name: "example.test" })).toBeVisible();
+  await expect(page.locator(".field.cursor")).toContainText("https://example.test/");
 });
 
 test("стрелки ходят по списку и полям, Ctrl+C копирует поле под курсором", async ({ page }) => {
