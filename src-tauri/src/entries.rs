@@ -141,7 +141,7 @@ impl From<FormatError> for CommandError {
 
 /// Меняет документ и сразу записывает файл. Если запись не удалась, документ
 /// в памяти возвращается к прежнему виду, чтобы он не расходился с файлом.
-fn edit<T>(
+pub(crate) fn edit<T>(
     session: &mut Session,
     kind: BackupKind,
     change: impl FnOnce(&mut Document) -> Result<T, FormatError>,

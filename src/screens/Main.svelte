@@ -63,7 +63,13 @@
         </div>
         <div class="empty-actions">
           <Button variant="primary" icon="plus" onclick={() => go("new-entry")}>Создать запись</Button>
-          <Button icon="import" onclick={() => go("import")}>Импортировать .md</Button>
+          <Button
+            icon="import"
+            onclick={() => {
+              app.importFrom = "main";
+              go("import");
+            }}>Импортировать .md</Button
+          >
         </div>
         <div class="sample">
           <div class="sample-head mono">Так выглядит запись в файле {app.vault?.name.replace(/\.age$/, "")}</div>

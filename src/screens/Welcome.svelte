@@ -38,9 +38,26 @@
     }
   }
 
+  /// «У меня уже есть .md-файл»: сначала создаём хранилище, потом импорт как шаг 2.
+  async function createAndImport() {
+    if (!canCreate) {
+      error = "Сначала задайте файл хранилища и мастер-пароль: импорт пойдёт в новое хранилище";
+      existing = false;
+      return;
+    }
+    if (await createVault()) {
+      app.importFrom = "welcome";
+      go("import");
+    }
+  }
+
   async function create(event: SubmitEvent) {
     event.preventDefault();
-    if (!canCreate || !file) return;
+    if (await createVault()) go("main");
+  }
+
+  async function createVault(): Promise<boolean> {
+    if (!canCreate || !file) return false;
     busy = true;
     error = null;
     existing = false;
@@ -49,10 +66,11 @@
       master = "";
       repeat = "";
       app.vault = await api.describePath(file.path);
-      go("main");
+      return true;
     } catch (err) {
       existing = isCommandError(err) && err.kind === "alreadyExists";
       error = errorText(err);
+      return false;
     } finally {
       busy = false;
     }
@@ -122,7 +140,7 @@
       <Button variant="primary" type="submit" full disabled={!canCreate}>
         {busy ? "Создаём…" : "Создать хранилище"}
       </Button>
-      <Button icon="import" full onclick={() => go("import")}>У меня уже есть .md-файл</Button>
+      <Button icon="import" full onclick={createAndImport}>У меня уже есть .md-файл</Button>
       <Button variant="ghost" size="sm" full onclick={openExisting}>Открыть существующее хранилище</Button>
     </div>
   </form>

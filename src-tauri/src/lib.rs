@@ -3,6 +3,7 @@ mod backups;
 mod clipboard;
 mod commands;
 mod entries;
+mod importing;
 mod session;
 mod settings;
 
@@ -73,6 +74,9 @@ pub fn run() {
             backups::restore_backup,
             backups::restore_damaged_vault,
             backups::export_backup,
+            importing::analyze_import,
+            importing::run_import,
+            importing::delete_import_source,
             entries::entries,
             entries::reveal_field,
             entries::copy_field,

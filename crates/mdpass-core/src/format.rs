@@ -92,6 +92,8 @@ pub struct Entry {
     pub title: String,
     pub fields: Vec<Field>,
     pub tags: Vec<String>,
+    /// Строки записи, которые не похожи на поле «ключ: значение».
+    pub extra: Vec<String>,
 }
 
 /// Данные записи для добавления или изменения.
@@ -271,6 +273,7 @@ impl Document {
                     title: e.title.clone(),
                     fields: e.fields.clone(),
                     tags: e.tags.clone(),
+                    extra: e.extra.clone(),
                 }),
                 _ => None,
             })
@@ -312,6 +315,35 @@ impl Document {
             work.insert_entry(id, draft, extra)?;
         }
         *self = work;
+        Ok(())
+    }
+
+    /// Исходный текст записи из файла. `None`, если запись уже выводится заново.
+    pub fn entry_source(&self, id: EntryId) -> Option<&str> {
+        match &self.nodes[self.entry_index(id)?] {
+            Node::Entry(entry) => entry.raw.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Выводит запись заново в обычном виде, даже если данные не менялись:
+    /// например, чтобы добавить пробел в слитное «ключ:значение».
+    pub fn rewrite(&mut self, id: EntryId) -> Result<(), FormatError> {
+        let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+        if let Node::Entry(entry) = &mut self.nodes[index] {
+            entry.raw = None;
+        }
+        Ok(())
+    }
+
+    /// Убирает из записи строки без ключа: их перенесли в поля.
+    pub fn clear_extra(&mut self, id: EntryId) -> Result<(), FormatError> {
+        let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+        if let Node::Entry(entry) = &mut self.nodes[index] {
+            entry.extra.zeroize();
+            entry.extra.clear();
+            entry.raw = None;
+        }
         Ok(())
     }
 

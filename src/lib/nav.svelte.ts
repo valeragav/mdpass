@@ -25,6 +25,8 @@ interface AppState {
   settings: Settings;
   /// Куда вернуться с экрана резервных копий.
   backupsFrom: Screen;
+  /// Откуда пришли на импорт: с первого запуска это «шаг 2 из 2».
+  importFrom: "welcome" | "main";
 }
 
 export const app = $state<AppState>({
@@ -33,6 +35,7 @@ export const app = $state<AppState>({
   defaultVault: null,
   fileErrorDetail: "",
   backupsFrom: "main",
+  importFrom: "main",
   // До ответа Rust действуют значения по умолчанию из дизайна.
   settings: {
     autoLockMinutes: 5,

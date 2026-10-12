@@ -6,5 +6,6 @@ pub mod config;
 pub mod diff;
 pub mod format;
 mod fs_atomic;
+pub mod importer;
 pub mod password;
 pub mod vault;

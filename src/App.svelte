@@ -9,6 +9,7 @@
   import Backups from "./screens/Backups.svelte";
   import EntryEditor from "./screens/EntryEditor.svelte";
   import FileError from "./screens/FileError.svelte";
+  import Import from "./screens/Import.svelte";
   import Main from "./screens/Main.svelte";
   import Settings from "./screens/Settings.svelte";
   import Placeholder from "./screens/Placeholder.svelte";
@@ -76,6 +77,8 @@
   <FileError />
 {:else if app.screen === "main"}
   <Main />
+{:else if app.screen === "import"}
+  <Import />
 {:else if app.screen === "settings"}
   <Settings />
 {:else if app.screen === "backups"}

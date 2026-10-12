@@ -19,6 +19,8 @@ pub struct Session {
     config_path: PathBuf,
     /// Последнее действие пользователя. От него считается автоблокировка.
     last_activity: Instant,
+    /// Открытый файл, который импортировали последним: только его можно удалить.
+    pub last_import: Option<PathBuf>,
 }
 
 impl Session {
@@ -29,6 +31,7 @@ impl Session {
             config: AppConfig::load(&config_path),
             config_path,
             last_activity: Instant::now(),
+            last_import: None,
         }
     }
 

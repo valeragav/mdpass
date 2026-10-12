@@ -155,6 +155,33 @@ mockIPC(
       return null;
     case "plugin:opener|reveal_item_in_dir":
       return null;
+    case "analyze_import": {
+      const fixes = (args as { fixes: Record<string, boolean> }).fixes;
+      const places = [
+        { path: ["work", "server"], title: "vps1 (инфра)" },
+        { path: ["work", "server"], title: "vps2 (бизнес)" },
+        { path: ["work", "site"], title: "leading" },
+        { path: ["my"], title: "почта" },
+      ];
+      if (!fixes.emptySections) places.push({ path: ["my"], title: "заметки" });
+      return {
+        entries: places.length,
+        sections: 4,
+        fields: 9,
+        tags: 3,
+        issues: [
+          { kind: "legacyTags", titles: ["leading"] },
+          { kind: "duplicateNotes", titles: ["БД анкеты"] },
+          { kind: "emptySections", titles: ["заметки"] },
+          { kind: "missingSpace", titles: ["vps2 (бизнес)"] },
+        ],
+        places,
+      };
+    }
+    case "run_import":
+      return 4;
+    case "delete_import_source":
+      return null;
     case "touch":
       return null;
     case "change_passphrase": {
@@ -169,8 +196,11 @@ mockIPC(
     case "lock":
       unlocked = false;
       return null;
-    case "plugin:dialog|open":
-      return `${HOME}/Documents/broken.md.age`;
+    case "plugin:dialog|open": {
+      const filters = (args as { options?: { filters?: { extensions: string[] }[] } }).options?.filters ?? [];
+      const markdown = filters.some((f) => f.extensions.includes("md"));
+      return markdown ? `${HOME}/Documents/passwords.md` : `${HOME}/Documents/broken.md.age`;
+    }
     case "plugin:dialog|save":
       return `${HOME}/Documents/new.md.age`;
     default:

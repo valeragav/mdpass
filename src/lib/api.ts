@@ -87,6 +87,27 @@ export type BackupChange =
   | { kind: "removed"; title: string }
   | { kind: "changed"; title: string; keys: string[] };
 
+export interface ImportFixes {
+  legacyTags: boolean;
+  duplicateNotes: boolean;
+  emptySections: boolean;
+  missingSpace: boolean;
+}
+
+export interface ImportIssue {
+  kind: "legacyTags" | "duplicateNotes" | "emptySections" | "missingSpace";
+  titles: string[];
+}
+
+export interface ImportPreview {
+  entries: number;
+  sections: number;
+  fields: number;
+  tags: number;
+  issues: ImportIssue[];
+  places: { path: string[]; title: string }[];
+}
+
 export function isCommandError(err: unknown): err is CommandError {
   return typeof err === "object" && err !== null && "kind" in err;
 }
@@ -155,6 +176,21 @@ export const api = {
   updateEntry: (entryId: number, draft: DraftInput) => invoke<void>("update_entry", { entryId, draft }),
   deleteEntry: (entryId: number) => invoke<void>("delete_entry", { entryId }),
   generatePassword: (length?: number) => invoke<string>("generate_password", { length }),
+
+  analyzeImport: (path: string, fixes: ImportFixes) => invoke<ImportPreview>("analyze_import", { path, fixes }),
+  runImport: (path: string, fixes: ImportFixes) => invoke<number>("run_import", { path, fixes }),
+  deleteImportSource: (path: string) => invoke<void>("delete_import_source", { path }),
+
+  /// Диалог выбора открытого .md-файла для импорта.
+  async pickMarkdown(): Promise<VaultFile | null> {
+    const path = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: "Markdown", extensions: ["md", "markdown", "txt"] }],
+      title: "Файл с паролями для импорта",
+    });
+    return typeof path === "string" ? api.describePath(path) : null;
+  },
 
   /// Диалог выбора места для нового хранилища.
   async pickNewVault(defaultPath?: string): Promise<VaultFile | null> {
