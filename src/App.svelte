@@ -12,7 +12,6 @@
   import Import from "./screens/Import.svelte";
   import Main from "./screens/Main.svelte";
   import Settings from "./screens/Settings.svelte";
-  import Placeholder from "./screens/Placeholder.svelte";
   import Unlock from "./screens/Unlock.svelte";
   import Welcome from "./screens/Welcome.svelte";
 
@@ -90,8 +89,6 @@
   {#key vault.selectedId}
     <EntryEditor entry={vault.entries.find((e) => e.id === vault.selectedId) ?? null} />
   {/key}
-{:else}
-  <Placeholder screen={app.screen} />
 {/if}
 
 <Toast />

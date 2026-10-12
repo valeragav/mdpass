@@ -361,17 +361,6 @@ impl Document {
         Ok(())
     }
 
-    /// Убирает из записи строки без ключа: их перенесли в поля.
-    pub fn clear_extra(&mut self, id: EntryId) -> Result<(), FormatError> {
-        let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
-        if let Node::Entry(entry) = &mut self.nodes[index] {
-            entry.extra.zeroize();
-            entry.extra.clear();
-            entry.raw = None;
-        }
-        Ok(())
-    }
-
     /// Переносит запись в раздел `path`: перед записью `before`, если она лежит в этом
     /// разделе, иначе в конец раздела. Недостающие разделы создаются, опустевший
     /// раздел, откуда ушла запись, убирается.

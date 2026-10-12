@@ -73,7 +73,8 @@ npm run tauri build
 когда в репозиторий пушат тег вида `v0.1.0`. Результат — черновик релиза с файлами.
 
 Android и iOS — следующий этап: интерфейс и ядро к ним готовы, нужны `npm run tauri android init`
-и `ios init` и буфер обмена через плагин Tauri.
+и `ios init`, буфер обмена через плагин Tauri и иконки для телефонов:
+`npm run tauri icon src-tauri/icons/app-icon.svg`.
 
 ## Где лежат данные
 
