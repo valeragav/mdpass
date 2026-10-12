@@ -47,3 +47,26 @@ jobs:
 
       - name: Тесты
         run: cargo test --workspace
+
+  audit:
+    name: Аудит зависимостей
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: npm audit
+        run: npm audit --audit-level=high
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      # Падает на уязвимостях. Предупреждения о заброшенных крейтах только выводятся:
+      # оба известных идут из Linux-зависимостей Tauri (GTK).
+      - name: cargo audit
+        run: cargo audit
