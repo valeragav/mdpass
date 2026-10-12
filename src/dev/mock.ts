@@ -8,8 +8,10 @@ const describe = (path: string) => ({
   path,
   display: path.startsWith(HOME) ? "~" + path.slice(HOME.length) : path,
   name: path.split("/").pop() ?? path,
-  exists: !path.includes("missing"),
+  exists: !path.includes("missing") && !path.includes("new"),
+  encrypted: path.includes("missing") || path.includes("new") ? null : path.endsWith(".age"),
 });
+let protection: "strong" | "weak" | "none" = "strong";
 
 // Выдуманные данные: адреса из диапазонов для документации, пароли случайные.
 const ENTRIES = [
@@ -84,6 +86,7 @@ mockIPC(
         unlocked,
         lastVault: lastVault ? describe(lastVault) : null,
         defaultVault: describe(`${HOME}/Documents/vault.md.age`),
+        protection: unlocked ? protection : null,
         settings,
       };
     case "describe_path":
@@ -91,17 +94,24 @@ mockIPC(
     case "create_vault":
       unlocked = true;
       lastVault = a.path;
-      return null;
+      protection = a.protection as typeof protection;
+      return protection;
     case "unlock": {
       if (Date.now() < retryUntil) throw { kind: "tooSoon", retryInMs: retryUntil - Date.now() };
       if (a.path.includes("broken")) throw { kind: "damaged", detail: "authentication tag mismatch" };
+      if (!a.path.endsWith(".age")) {
+        unlocked = true;
+        protection = "none";
+        return protection;
+      }
       if (a.passphrase !== "password1") {
         retryUntil = Date.now() + 3000;
         throw { kind: "wrongPassphrase", retryInMs: 3000 };
       }
       unlocked = true;
       lastVault = a.path;
-      return null;
+      protection = "strong";
+      return protection;
     }
     case "entries":
       return ENTRIES.map((e) => ({ ...e, fields: e.fields.map((f) => ({ ...f, value: f.secret ? null : f.value })) }));
@@ -209,11 +219,13 @@ mockIPC(
       return null;
     case "touch":
       return null;
-    case "change_passphrase": {
-      const n = args as { current: string; new: string };
-      if (n.current !== "password1") throw { kind: "wrongPassphrase", retryInMs: 3000 };
-      if (n.new.length < 8) throw { kind: "invalid", message: "Новый мастер-пароль должен быть не короче 8 символов" };
-      return null;
+    case "change_protection": {
+      const n = args as { current: string | null; new: string | null; protection: typeof protection };
+      if (protection !== "none" && n.current !== "password1") throw { kind: "wrongPassphrase", retryInMs: 3000 };
+      if (n.protection !== "none" && (n.new ?? "").length < 8)
+        throw { kind: "invalid", message: "Мастер-пароль должен быть не короче 8 символов" };
+      protection = n.protection;
+      return protection;
     }
     case "update_settings":
       settings = (args as { settings: typeof settings }).settings;

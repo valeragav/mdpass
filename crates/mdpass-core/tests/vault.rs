@@ -103,9 +103,9 @@ fn damaged_file_is_not_reported_as_wrong_passphrase() {
     let last = flipped.len() - 5;
     flipped[last] ^= 0x01;
     let truncated = good[..good.len() - 10].to_vec();
-    let not_age = b"# work\n### alpha\npassword: p\n".to_vec();
+    let not_text = vec![0xff, 0xfe, 0x00, 0x41];
 
-    for damaged in [flipped, truncated, not_age, Vec::new()] {
+    for damaged in [flipped, truncated, not_text] {
         fs::write(&path, &damaged).unwrap();
         assert!(matches!(Vault::open(&path, pass("p")), Err(VaultError::Damaged(_))), "{damaged:?}");
     }
@@ -198,4 +198,61 @@ fn limiter_blocks_attempts_for_a_while_after_a_failure() {
     limiter.failed(start + Duration::from_secs(10));
     limiter.succeeded();
     assert_eq!(limiter.wait(start + Duration::from_secs(10)), None);
+}
+
+#[test]
+fn open_vault_is_plain_markdown_and_needs_no_passphrase() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md");
+    let mut vault = Vault::create_plain(&path).unwrap();
+    assert!(!vault.is_encrypted() && vault.options().is_none());
+    vault.document_mut().add(sample_draft()).unwrap();
+    vault.save().unwrap();
+
+    let text = fs::read_to_string(&path).unwrap();
+    assert_eq!(text, vault.document().to_markdown());
+    assert!(text.contains("**alpha**"));
+    assert!(!mdpass_core::vault::file_is_encrypted(&path).unwrap());
+    assert_eq!(Vault::open_plain(&path).unwrap().document().entries().len(), 1);
+    // Пароль при открытии открытого файла не мешает.
+    assert_eq!(Vault::open(&path, pass("любой")).unwrap().document().entries().len(), 1);
+}
+
+#[test]
+fn encrypted_vault_cannot_be_opened_without_a_passphrase() {
+    let dir = TempDir::new().unwrap();
+    let path = vault_path(&dir);
+    Vault::create(&path, pass("p"), FAST).unwrap();
+    assert!(mdpass_core::vault::file_is_encrypted(&path).unwrap());
+    assert!(matches!(Vault::open_plain(&path), Err(VaultError::PassphraseRequired)));
+}
+
+#[test]
+fn weak_and_strong_protection_keep_their_work_factor() {
+    assert!(VaultOptions::STRONG.is_strong() && !VaultOptions::WEAK.is_strong());
+    let dir = TempDir::new().unwrap();
+    let path = vault_path(&dir);
+    let mut vault = Vault::create(&path, pass("p"), VaultOptions::WEAK).unwrap();
+    vault.document_mut().add(sample_draft()).unwrap();
+    vault.save().unwrap();
+    let reopened = Vault::open(&path, pass("p")).unwrap();
+    assert_eq!(reopened.options(), Some(VaultOptions::WEAK));
+}
+
+#[test]
+fn protection_can_be_turned_on_and_off() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md");
+    let mut vault = Vault::create_plain(&path).unwrap();
+    vault.document_mut().add(sample_draft()).unwrap();
+    vault.save().unwrap();
+
+    vault.set_protection(Some((pass("новый-пароль"), FAST)), |_| Ok(())).unwrap();
+    assert!(vault.is_encrypted() && mdpass_core::vault::file_is_encrypted(&path).unwrap());
+    assert!(vault.passphrase_matches(&pass("новый-пароль")));
+
+    vault.set_protection(None, |_| Ok(())).unwrap();
+    assert!(!vault.is_encrypted());
+    assert!(fs::read_to_string(&path).unwrap().contains("**alpha**"));
+    assert!(!vault.passphrase_matches(&pass("новый-пароль")));
 }

@@ -7,8 +7,23 @@
   import Icon from "../lib/ui/Icon.svelte";
   import Logo from "../lib/ui/Logo.svelte";
   import PasswordInput from "../lib/ui/PasswordInput.svelte";
+  import ProtectionPicker, { type Protection } from "../lib/ui/ProtectionPicker.svelte";
 
   let file = $state<VaultFile | null>(app.defaultVault);
+  let protection = $state<Protection>("strong");
+  let encrypted = $derived(protection !== "none");
+
+  // Открытое хранилище — обычный .md, зашифрованное — .md.age.
+  $effect(() => {
+    const current = file;
+    if (!current) return;
+    const wanted = encrypted
+      ? current.path.endsWith(".age")
+        ? current.path
+        : `${current.path}.age`
+      : current.path.replace(/\.age$/, "");
+    if (wanted !== current.path) api.describePath(wanted).then((next) => (file = next));
+  });
   let master = $state("");
   let repeat = $state("");
   let busy = $state(false);
@@ -18,7 +33,9 @@
   let meter = $derived(strength(master));
   let tooShort = $derived(master.length > 0 && master.length < MIN_MASTER_LENGTH);
   let mismatch = $derived(repeat.length > 0 && repeat !== master);
-  let canCreate = $derived(file !== null && master.length >= MIN_MASTER_LENGTH && repeat === master && !busy);
+  let canCreate = $derived(
+    file !== null && !busy && (!encrypted || (master.length >= MIN_MASTER_LENGTH && repeat === master)),
+  );
   let barColor = $derived(meter.score <= 1 ? "var(--danger)" : meter.score === 2 ? "var(--accent)" : "var(--info)");
 
   async function pickFile() {
@@ -62,7 +79,7 @@
     error = null;
     existing = false;
     try {
-      await api.createVault(file.path, master);
+      app.protection = await api.createVault(file.path, encrypted ? master : null, protection);
       master = "";
       repeat = "";
       app.vault = await api.describePath(file.path);
@@ -88,7 +105,7 @@
   <form class="card" onsubmit={create}>
     <div class="intro">
       <h1>Создайте хранилище</h1>
-      <p>Все записи лежат в одном зашифрованном файле. Внутри обычный Markdown.</p>
+      <p>Все записи лежат в одном файле. Внутри обычный Markdown.</p>
     </div>
 
     <div class="field">
@@ -107,6 +124,12 @@
       {/if}
     </div>
 
+    <div class="field">
+      <span class="label">Защита файла</span>
+      <ProtectionPicker bind:value={protection} />
+    </div>
+
+    {#if encrypted}
     <div class="field">
       <label for="m1">Мастер-пароль</label>
       <PasswordInput id="m1" bind:value={master} placeholder="Лучше длинная фраза из нескольких слов" autofocus />
@@ -135,6 +158,7 @@
       <Icon name="warning" size={18} color="var(--accent)" />
       <span>Мастер-пароль нельзя восстановить. Если вы его забудете, расшифровать данные не получится.</span>
     </div>
+    {/if}
 
     <div class="actions">
       <Button variant="primary" type="submit" full disabled={!canCreate}>

@@ -108,7 +108,7 @@
     error = null;
     try {
       if (damaged && vaultPath) {
-        await api.restoreDamagedVault(vaultPath, selected.id, password);
+        await api.restoreDamagedVault(vaultPath, selected.id, password || null);
         password = "";
       } else {
         await api.restoreBackup(selected.id);
@@ -135,7 +135,7 @@
   let canRestore = $derived(
     selected !== null &&
       !busy &&
-      (damaged ? password.length > 0 : preview !== null && preview.length > 0 && !previewing),
+      (damaged || (preview !== null && preview.length > 0 && !previewing)),
   );
 </script>
 
@@ -190,7 +190,12 @@
             </p>
             <div class="field">
               <label for="restore-pass">Мастер-пароль этой копии</label>
-              <PasswordInput id="restore-pass" bind:value={password} placeholder="Введите мастер-пароль" autofocus />
+              <PasswordInput
+                id="restore-pass"
+                bind:value={password}
+                placeholder="Оставьте пустым, если копия без шифрования"
+                autofocus
+              />
             </div>
           {:else}
             <div class="group">

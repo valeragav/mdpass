@@ -1,6 +1,6 @@
 // Какой экран сейчас открыт и с каким файлом хранилища работаем.
 // Экраны соответствуют артбордам на холсте дизайна.
-import type { Settings, VaultFile } from "./api";
+import type { Protection, Settings, VaultFile } from "./api";
 
 export type Screen =
   | "loading"
@@ -23,6 +23,8 @@ interface AppState {
   /// Техническая причина, по которой файл не открылся.
   fileErrorDetail: string;
   settings: Settings;
+  /// Защита открытого хранилища.
+  protection: Protection | null;
   /// Куда вернуться с экрана резервных копий.
   backupsFrom: Screen;
   /// Откуда пришли на импорт: с первого запуска это «шаг 2 из 2».
@@ -34,6 +36,7 @@ export const app = $state<AppState>({
   vault: null,
   defaultVault: null,
   fileErrorDetail: "",
+  protection: null,
   backupsFrom: "main",
   importFrom: "main",
   // До ответа Rust действуют значения по умолчанию из дизайна.

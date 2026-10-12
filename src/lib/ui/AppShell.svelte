@@ -19,11 +19,11 @@
 <div class="shell">
   <header>
     <Logo size="sm" />
-    <div class="file mono">
-      <Icon name="lock" size={14} />
+    <div class="file mono" class:open={app.protection === "none"}>
+      <Icon name={app.protection === "none" ? "unlock" : "lock"} size={14} />
       <span>{app.vault?.name}</span>
       <span class="dot">·</span>
-      <span>зашифровано</span>
+      <span>{app.protection === "none" ? "без шифрования" : app.protection === "weak" ? "слабое шифрование" : "зашифровано"}</span>
     </div>
     <div class="actions">
       <IconButton icon="settings" label="Настройки" bordered size="sm" onclick={() => go("settings")} />
@@ -38,7 +38,7 @@
   <footer class="mono">
     <div class="left">
       <Icon name="lock-memory" size={14} />
-      <span>Расшифровано только в памяти</span>
+      <span>{app.protection === "none" ? "Файл не зашифрован" : "Расшифровано только в памяти"}</span>
       <span class="dot">·</span>
       <span>{status}</span>
     </div>
@@ -80,6 +80,11 @@
     color: var(--text-subtle);
     white-space: nowrap;
     overflow: hidden;
+  }
+
+  .file.open {
+    border-color: color-mix(in srgb, var(--danger) 50%, transparent);
+    color: var(--danger-text);
   }
 
   .dot {

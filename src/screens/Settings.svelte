@@ -20,7 +20,8 @@
   import Button from "../lib/ui/Button.svelte";
   import Icon from "../lib/ui/Icon.svelte";
   import Logo from "../lib/ui/Logo.svelte";
-  import ChangePassphrase from "./settings/ChangePassphrase.svelte";
+  import { PROTECTION_LABEL } from "../lib/ui/ProtectionPicker.svelte";
+  import ChangeProtection from "./settings/ChangeProtection.svelte";
 
   type Tab = "security" | "file" | "look";
   const TABS: [Tab, string][] = [
@@ -154,10 +155,15 @@
           </div>
           <div class="row">
             <div>
-              <div class="name">Мастер-пароль</div>
-              <div class="hint">Файл будет зашифрован заново</div>
+              <div class="name">Защита файла</div>
+              <div class="hint">
+                {app.protection ? PROTECTION_LABEL[app.protection] : "—"}.
+                {app.protection === "none" ? "Файл лежит открытым текстом" : "Мастер-пароль, сила шифрования или его отключение"}
+              </div>
             </div>
-            <Button size="sm" onclick={() => (changingPassphrase = true)}>Сменить…</Button>
+            <Button size="sm" onclick={() => (changingPassphrase = true)}>
+              {app.protection === "none" ? "Включить шифрование…" : "Изменить…"}
+            </Button>
           </div>
         {:else if tab === "file"}
           <h1>Файл и копии</h1>
@@ -228,7 +234,7 @@
   </div>
 </div>
 
-<ChangePassphrase open={changingPassphrase} onclose={() => (changingPassphrase = false)} />
+<ChangeProtection open={changingPassphrase} onclose={() => (changingPassphrase = false)} />
 
 <style>
   .screen {

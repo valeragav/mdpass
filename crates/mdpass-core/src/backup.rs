@@ -137,24 +137,27 @@ impl BackupStore {
 
 /// Восстанавливает хранилище из копии, когда сам файл не открывается.
 ///
-/// Копия сначала проверяется паролем. Повреждённый файл не удаляется: он
+/// Копия сначала проверяется паролем; открытой копии пароль не нужен. Повреждённый файл не удаляется: он
 /// переименовывается в `<имя>.damaged-<время>` рядом с хранилищем.
 pub fn restore_damaged(
     vault_path: &Path,
     store: &BackupStore,
     id: &str,
-    passphrase: Passphrase,
+    passphrase: Option<Passphrase>,
     now: SystemTime,
 ) -> Result<Vault, VaultError> {
     let bytes = store.read(id)?;
-    decrypt_file(&bytes, &passphrase)?;
+    decrypt_file(&bytes, passphrase.as_ref())?;
     if vault_path.exists() {
         let name = vault_path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         let aside = vault_path.with_file_name(format!("{name}.damaged-{}", format_stamp(now)));
         fs::rename(vault_path, aside)?;
     }
     write_atomic(vault_path, &bytes)?;
-    Vault::open(vault_path, passphrase)
+    match passphrase {
+        Some(passphrase) => Vault::open(vault_path, passphrase),
+        None => Vault::open_plain(vault_path),
+    }
 }
 
 /// `20261012T114203123Z-update.age` или с суффиксом `…-update-1.age`.

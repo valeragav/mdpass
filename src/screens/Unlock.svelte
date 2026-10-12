@@ -21,7 +21,11 @@
 
   let retryLeft = $derived(Math.max(0, Math.ceil((retryUntil - now) / 1000)));
   let missing = $derived(app.vault !== null && !app.vault.exists);
-  let canSubmit = $derived(app.vault !== null && !missing && password.length > 0 && !busy && retryLeft === 0);
+  /// Открытое хранилище открывается без пароля.
+  let plain = $derived(app.vault?.encrypted === false);
+  let canSubmit = $derived(
+    app.vault !== null && !missing && (plain || password.length > 0) && !busy && retryLeft === 0,
+  );
 
   async function submit(event: SubmitEvent) {
     event.preventDefault();
@@ -29,7 +33,7 @@
     busy = true;
     error = null;
     try {
-      await api.unlock(app.vault.path, password);
+      app.protection = await api.unlock(app.vault.path, plain ? null : password);
       password = "";
       go("main");
     } catch (err) {
@@ -69,6 +73,12 @@
       </p>
     {/if}
 
+    {#if plain}
+      <p class="plain-note">
+        <Icon name="warning" color="var(--danger)" />
+        <span>Хранилище без шифрования: пароль не нужен, файл может прочитать любой.</span>
+      </p>
+    {:else}
     <div class="field">
       <label for="master">Мастер-пароль</label>
       <PasswordInput
@@ -91,13 +101,14 @@
           </span>
         </p>
       {/if}
-      {#if error}
-        <p class="error" role="alert"><Icon name="error" /><span>{error}</span></p>
-      {/if}
     </div>
+    {/if}
+    {#if error}
+      <p class="error" role="alert"><Icon name="error" /><span>{error}</span></p>
+    {/if}
 
     <Button variant="primary" type="submit" icon="unlock" full disabled={!canSubmit}>
-      {busy ? "Проверяем…" : "Разблокировать"}
+      {busy ? "Проверяем…" : plain ? "Открыть" : "Разблокировать"}
     </Button>
     <Button variant="ghost" size="sm" full onclick={() => go("welcome")}>Создать новое хранилище</Button>
   </form>
@@ -156,6 +167,14 @@
 
   .error :global(svg) {
     margin-top: 1px;
+  }
+
+  .plain-note {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    color: var(--danger-text);
+    font-size: 13px;
   }
 
   .hint {

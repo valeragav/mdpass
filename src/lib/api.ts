@@ -7,7 +7,11 @@ export interface VaultFile {
   display: string;
   name: string;
   exists: boolean;
+  /// Зашифрован ли файл. `null`, если файла нет.
+  encrypted: boolean | null;
 }
+
+export type Protection = "strong" | "weak" | "none";
 
 export interface Settings {
   /// 0 — не блокировать.
@@ -26,6 +30,8 @@ export interface Status {
   unlocked: boolean;
   lastVault: VaultFile | null;
   defaultVault: VaultFile | null;
+  /// Защита открытого хранилища. `null`, пока оно заблокировано.
+  protection: Protection | null;
   settings: Settings;
 }
 
@@ -36,6 +42,7 @@ export type CommandError =
   | { kind: "notFound" }
   | { kind: "alreadyExists" }
   | { kind: "emptyPassphrase" }
+  | { kind: "passphraseRequired" }
   | { kind: "changedOnDisk" }
   | { kind: "locked" }
   | { kind: "entryNotFound" }
@@ -128,6 +135,8 @@ export function errorText(err: unknown): string {
       return "Такой файл уже есть. Выберите другое имя или откройте его";
     case "emptyPassphrase":
       return "Мастер-пароль не может быть пустым";
+    case "passphraseRequired":
+      return "Файл зашифрован: введите мастер-пароль";
     case "changedOnDisk":
       return "Файл изменён вне приложения. Изменения не записаны: заблокируйте хранилище и откройте его заново";
     case "locked":
@@ -145,23 +154,25 @@ export function errorText(err: unknown): string {
   }
 }
 
-const VAULT_FILTERS = [{ name: "Хранилище mdpass", extensions: ["age"] }];
+const VAULT_FILTERS = [{ name: "Хранилище mdpass", extensions: ["age", "md"] }];
 
 export const api = {
   status: () => invoke<Status>("status"),
   describePath: (path: string) => invoke<VaultFile>("describe_path", { path }),
-  createVault: (path: string, passphrase: string) => invoke<void>("create_vault", { path, passphrase }),
-  unlock: (path: string, passphrase: string) => invoke<void>("unlock", { path, passphrase }),
+  createVault: (path: string, passphrase: string | null, protection: Protection) =>
+    invoke<Protection>("create_vault", { path, passphrase, protection }),
+  /// `passphrase: null` — открыть хранилище без шифрования.
+  unlock: (path: string, passphrase: string | null) => invoke<Protection>("unlock", { path, passphrase }),
   lock: () => invoke<void>("lock"),
   touch: () => invoke<void>("touch"),
-  changePassphrase: (current: string, next: string) =>
-    invoke<void>("change_passphrase", { current, new: next }),
+  changeProtection: (current: string | null, next: string | null, protection: Protection) =>
+    invoke<Protection>("change_protection", { current, new: next, protection }),
   updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
   /// `path` — для файла, который не открывается; иначе копии открытого хранилища.
   listBackups: (path?: string) => invoke<BackupView[]>("list_backups", { path }),
   previewBackup: (id: string) => invoke<BackupChange[]>("preview_backup", { id }),
   restoreBackup: (id: string) => invoke<void>("restore_backup", { id }),
-  restoreDamagedVault: (path: string, id: string, passphrase: string) =>
+  restoreDamagedVault: (path: string, id: string, passphrase: string | null) =>
     invoke<void>("restore_damaged_vault", { path, id, passphrase }),
   async exportBackup(id: string, path?: string): Promise<boolean> {
     const to = await save({ defaultPath: id, filters: VAULT_FILTERS, title: "Сохранить копию как файл" });

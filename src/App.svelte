@@ -59,6 +59,7 @@
   async function init() {
     const status = await api.status();
     app.settings = status.settings;
+    app.protection = status.protection;
     app.defaultVault = status.defaultVault;
     app.vault = status.lastVault;
     if (status.unlocked) go("main");

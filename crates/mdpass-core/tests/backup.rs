@@ -127,7 +127,7 @@ fn restoring_a_backup_brings_back_its_entries() {
     vault.save().unwrap();
 
     let restored = vault.decrypt_backup(&with_alpha).unwrap();
-    vault.restore(with_alpha, restored, |old| store.save(old, BackupKind::Restore, at(0)).map(drop)).unwrap();
+    vault.restore(restored, |old| store.save(old, BackupKind::Restore, at(0)).map(drop)).unwrap();
     assert_eq!(vault.document().entries()[0].title, "alpha");
     assert_eq!(Vault::open(&path, pass("p")).unwrap().document().entries().len(), 1);
     assert_eq!(store.list().unwrap()[0].kind, BackupKind::Restore);
@@ -185,12 +185,12 @@ fn damaged_vault_is_restored_from_a_backup_and_kept_aside() {
     fs::write(&path, b"broken").unwrap();
 
     assert!(matches!(
-        restore_damaged(&path, &store, &backup.id, pass("wrong"), at(1)),
+        restore_damaged(&path, &store, &backup.id, Some(pass("wrong")), at(1)),
         Err(VaultError::WrongPassphrase)
     ));
     assert_eq!(fs::read(&path).unwrap(), b"broken", "неверный пароль ничего не меняет");
 
-    let restored = restore_damaged(&path, &store, &backup.id, pass("p"), at(1)).unwrap();
+    let restored = restore_damaged(&path, &store, &backup.id, Some(pass("p")), at(1)).unwrap();
     assert_eq!(restored.document().entries()[0].title, "alpha");
     assert_eq!(fs::read(&path).unwrap(), good);
     let aside: Vec<_> = fs::read_dir(dir.path())
@@ -200,4 +200,37 @@ fn damaged_vault_is_restored_from_a_backup_and_kept_aside() {
         .collect();
     assert_eq!(aside.len(), 1);
     assert_eq!(fs::read(dir.path().join(&aside[0])).unwrap(), b"broken");
+}
+
+#[test]
+fn restoring_an_open_backup_keeps_the_vault_encrypted() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md");
+    let mut vault = Vault::create_plain(&path).unwrap();
+    vault.document_mut().add(draft("alpha", "1")).unwrap();
+    vault.save().unwrap();
+    let open_copy = fs::read(&path).unwrap();
+    vault.change_passphrase(pass("теперь-с-паролем"), FAST).unwrap();
+
+    let document = vault.decrypt_backup(&open_copy).unwrap();
+    vault.restore(document, |_| Ok(())).unwrap();
+    assert!(mdpass_core::vault::file_is_encrypted(&path).unwrap());
+    assert_eq!(Vault::open(&path, pass("теперь-с-паролем")).unwrap().document().entries().len(), 1);
+}
+
+#[test]
+fn damaged_open_vault_is_restored_without_a_passphrase() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md");
+    let store = BackupStore::for_vault(&path);
+    let mut vault = Vault::create_plain(&path).unwrap();
+    vault.document_mut().add(draft("alpha", "1")).unwrap();
+    vault.save().unwrap();
+    let backup = store.save(&fs::read(&path).unwrap(), BackupKind::Update, at(0)).unwrap();
+    drop(vault);
+    fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
+
+    let restored = restore_damaged(&path, &store, &backup.id, None, at(1)).unwrap();
+    assert!(!restored.is_encrypted());
+    assert_eq!(restored.document().entries()[0].title, "alpha");
 }

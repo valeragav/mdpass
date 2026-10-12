@@ -1,9 +1,10 @@
-//! Хранилище на диске: Markdown-документ, зашифрованный паролем в формате age (scrypt).
+//! Хранилище на диске: Markdown-документ, зашифрованный паролем в формате age (scrypt),
+//! или обычный открытый Markdown-файл, если шифрование выключено.
 //!
-//! Файл — обычный age, его можно расшифровать утилитой `age -d`. Запись атомарная:
-//! новый файл пишется рядом во временный и заменяет старый одним переименованием.
-//! Перед записью приложение сверяет файл с тем, что записало само в последний раз,
-//! чтобы не затереть изменения, сделанные вне приложения.
+//! Зашифрованный файл — обычный age, его можно расшифровать утилитой `age -d`.
+//! Запись атомарная: новый файл пишется рядом во временный и заменяет старый одним
+//! переименованием. Перед записью приложение сверяет файл с тем, что записало само
+//! в последний раз, чтобы не затереть изменения, сделанные вне приложения.
 
 use std::fmt;
 use std::fs;
@@ -22,6 +23,9 @@ use crate::fs_atomic::{write_atomic, write_new};
 /// Мастер-пароль. Стирается из памяти при удалении.
 pub type Passphrase = SecretString;
 
+/// Начало каждого файла age.
+const AGE_MAGIC: &[u8] = b"age-encryption.org/";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct VaultOptions {
     /// Сложность scrypt, log2(N). Каждая единица вдвое замедляет подбор пароля
@@ -29,10 +33,21 @@ pub struct VaultOptions {
     pub work_factor: u8,
 }
 
-impl Default for VaultOptions {
+impl VaultOptions {
     /// 2^18: около секунды на открытие, 256 МБ памяти на каждую попытку подбора.
+    pub const STRONG: Self = Self { work_factor: 18 };
+    /// 2^12: файл открывается мгновенно, но подбор пароля в 64 раза дешевле.
+    pub const WEAK: Self = Self { work_factor: 12 };
+
+    /// Считается ли такая сложность надёжной.
+    pub fn is_strong(self) -> bool {
+        self.work_factor >= 16
+    }
+}
+
+impl Default for VaultOptions {
     fn default() -> Self {
-        Self { work_factor: 18 }
+        Self::STRONG
     }
 }
 
@@ -41,6 +56,8 @@ pub enum VaultError {
     EmptyPassphrase,
     AlreadyExists,
     WrongPassphrase,
+    /// Файл зашифрован, а пароль не передан.
+    PassphraseRequired,
     /// Файл повреждён, изменён или это не хранилище. В строке — техническая причина.
     Damaged(String),
     /// Файл на диске изменился с момента открытия или последней записи.
@@ -54,6 +71,7 @@ impl fmt::Display for VaultError {
             Self::EmptyPassphrase => write!(f, "Мастер-пароль не может быть пустым"),
             Self::AlreadyExists => write!(f, "Файл уже существует"),
             Self::WrongPassphrase => write!(f, "Неверный мастер-пароль"),
+            Self::PassphraseRequired => write!(f, "Файл зашифрован: нужен мастер-пароль"),
             Self::Damaged(reason) => write!(f, "Файл повреждён или изменён вне приложения: {reason}"),
             Self::ChangedOnDisk => write!(f, "Файл хранилища изменён вне приложения"),
             Self::Io(err) => write!(f, "Ошибка доступа к файлу: {err}"),
@@ -69,35 +87,94 @@ impl From<io::Error> for VaultError {
     }
 }
 
-pub struct Vault {
-    path: PathBuf,
+/// Пароль и сложность шифрования. Нет ключа — файл хранится открытым.
+struct Key {
     passphrase: Passphrase,
     options: VaultOptions,
+}
+
+pub struct Vault {
+    path: PathBuf,
+    key: Option<Key>,
     document: Document,
     /// Байты файла, которые приложение прочитало или записало последними.
     on_disk: Vec<u8>,
 }
 
+/// Зашифрованы ли байты файла.
+pub fn is_encrypted(bytes: &[u8]) -> bool {
+    bytes.starts_with(AGE_MAGIC)
+}
+
+/// Зашифрован ли файл на диске. Читает только начало файла.
+pub fn file_is_encrypted(path: &Path) -> io::Result<bool> {
+    let mut start = [0u8; AGE_MAGIC.len()];
+    let mut file = fs::File::open(path)?;
+    let mut read = 0;
+    while read < start.len() {
+        match file.read(&mut start[read..])? {
+            0 => break,
+            n => read += n,
+        }
+    }
+    Ok(is_encrypted(&start[..read]))
+}
+
 impl Vault {
-    /// Создаёт пустое хранилище. Существующий файл не перезаписывается.
+    /// Создаёт пустое зашифрованное хранилище. Существующий файл не перезаписывается.
     pub fn create(path: &Path, passphrase: Passphrase, options: VaultOptions) -> Result<Self, VaultError> {
         check_passphrase(&passphrase)?;
+        Self::create_with(path, Some(Key { passphrase, options }))
+    }
+
+    /// Создаёт пустое хранилище без шифрования: обычный Markdown-файл.
+    pub fn create_plain(path: &Path) -> Result<Self, VaultError> {
+        Self::create_with(path, None)
+    }
+
+    fn create_with(path: &Path, key: Option<Key>) -> Result<Self, VaultError> {
         let document = Document::default();
-        let bytes = encrypt(&Zeroizing::new(document.to_markdown()), &passphrase, options)?;
+        let bytes = encode(&document, key.as_ref())?;
         write_new(path, &bytes).map_err(|err| match err.kind() {
             io::ErrorKind::AlreadyExists => VaultError::AlreadyExists,
             _ => VaultError::Io(err),
         })?;
-        Ok(Self { path: path.to_path_buf(), passphrase, options, document, on_disk: bytes })
+        Ok(Self { path: path.to_path_buf(), key, document, on_disk: bytes })
     }
 
+    /// Открывает хранилище. Открытый файл открывается и так, пароль тогда не нужен.
     pub fn open(path: &Path, passphrase: Passphrase) -> Result<Self, VaultError> {
+        Self::open_with(path, Some(passphrase))
+    }
+
+    /// Открывает хранилище без шифрования. Зашифрованный файл даёт
+    /// [`VaultError::PassphraseRequired`].
+    pub fn open_plain(path: &Path) -> Result<Self, VaultError> {
+        Self::open_with(path, None)
+    }
+
+    fn open_with(path: &Path, passphrase: Option<Passphrase>) -> Result<Self, VaultError> {
         let bytes = fs::read(path)?;
+        if !is_encrypted(&bytes) {
+            let markdown = plain_text(&bytes)?;
+            return Ok(Self {
+                path: path.to_path_buf(),
+                key: None,
+                document: Document::parse(&markdown),
+                on_disk: bytes,
+            });
+        }
+        let passphrase = passphrase.ok_or(VaultError::PassphraseRequired)?;
         let markdown = decrypt(&bytes, &passphrase)?;
         // Сохраняем ту сложность scrypt, с которой файл был зашифрован.
         let options =
             scrypt_work_factor(&bytes).map_or_else(VaultOptions::default, |work_factor| VaultOptions { work_factor });
-        Ok(Self { path: path.to_path_buf(), passphrase, options, document: Document::parse(&markdown), on_disk: bytes })
+        Ok(Self {
+            path: path.to_path_buf(),
+            key: Some(Key { passphrase, options }),
+            document: Document::parse(&markdown),
+            on_disk: bytes,
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -112,11 +189,21 @@ impl Vault {
         &mut self.document
     }
 
-    pub fn passphrase_matches(&self, candidate: &Passphrase) -> bool {
-        self.passphrase.expose_secret() == candidate.expose_secret()
+    /// Сложность шифрования. `None` — файл не зашифрован.
+    pub fn options(&self) -> Option<VaultOptions> {
+        self.key.as_ref().map(|key| key.options)
     }
 
-    /// Шифрует документ и записывает файл.
+    pub fn is_encrypted(&self) -> bool {
+        self.key.is_some()
+    }
+
+    /// Совпадает ли пароль с текущим. У открытого файла пароля нет: всегда `false`.
+    pub fn passphrase_matches(&self, candidate: &Passphrase) -> bool {
+        self.key.as_ref().is_some_and(|key| key.passphrase.expose_secret() == candidate.expose_secret())
+    }
+
+    /// Записывает файл с текущей защитой.
     pub fn save(&mut self) -> Result<(), VaultError> {
         self.save_with_backup(|_| Ok(()))
     }
@@ -124,47 +211,53 @@ impl Vault {
     /// Как [`save`](Self::save), но сначала передаёт `backup` байты файла, который
     /// сейчас лежит на диске. Если копия не удалась, файл не перезаписывается.
     pub fn save_with_backup(&mut self, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<(), VaultError> {
-        let bytes = encrypt(&Zeroizing::new(self.document.to_markdown()), &self.passphrase, self.options)?;
+        let bytes = encode(&self.document, self.key.as_ref())?;
         self.replace_file(bytes, backup)
     }
 
     /// Шифрует файл новым паролем и сразу записывает его.
     pub fn change_passphrase(&mut self, passphrase: Passphrase, options: VaultOptions) -> Result<(), VaultError> {
-        self.change_passphrase_with_backup(passphrase, options, |_| Ok(()))
+        self.set_protection(Some((passphrase, options)), |_| Ok(()))
     }
 
-    pub fn change_passphrase_with_backup(
+    /// Меняет защиту файла и сразу записывает его: новый пароль или сложность,
+    /// `None` — снять шифрование.
+    pub fn set_protection(
         &mut self,
-        passphrase: Passphrase,
-        options: VaultOptions,
+        protection: Option<(Passphrase, VaultOptions)>,
         backup: impl FnOnce(&[u8]) -> io::Result<()>,
     ) -> Result<(), VaultError> {
-        check_passphrase(&passphrase)?;
-        let bytes = encrypt(&Zeroizing::new(self.document.to_markdown()), &passphrase, options)?;
+        if let Some((passphrase, _)) = &protection {
+            check_passphrase(passphrase)?;
+        }
+        let key = protection.map(|(passphrase, options)| Key { passphrase, options });
+        let bytes = encode(&self.document, key.as_ref())?;
         self.replace_file(bytes, backup)?;
-        self.passphrase = passphrase;
-        self.options = options;
+        self.key = key;
         Ok(())
     }
 
-    /// Расшифровывает резервную копию текущим паролем. Копия, сделанная до смены
-    /// пароля, даёт [`VaultError::WrongPassphrase`].
+    /// Читает резервную копию. Открытая копия читается всегда, зашифрованная —
+    /// текущим паролем; копия, сделанная до смены пароля, даёт
+    /// [`VaultError::WrongPassphrase`].
     pub fn decrypt_backup(&self, bytes: &[u8]) -> Result<Document, VaultError> {
-        decrypt_file(bytes, &self.passphrase)
+        match &self.key {
+            Some(key) => decrypt_file(bytes, Some(&key.passphrase)),
+            None if is_encrypted(bytes) => Err(VaultError::WrongPassphrase),
+            None => decrypt_file(bytes, None),
+        }
     }
 
-    /// Заменяет файл байтами резервной копии. `document` — её расшифровка из
-    /// [`decrypt_backup`](Self::decrypt_backup).
+    /// Заменяет содержимое хранилища документом из резервной копии. Файл пишется
+    /// с текущей защитой: открытая старая копия не снимет шифрование.
     pub fn restore(
         &mut self,
-        bytes: Vec<u8>,
         document: Document,
         backup: impl FnOnce(&[u8]) -> io::Result<()>,
     ) -> Result<(), VaultError> {
-        let options = scrypt_work_factor(&bytes).map_or(self.options, |work_factor| VaultOptions { work_factor });
+        let bytes = encode(&document, self.key.as_ref())?;
         self.replace_file(bytes, backup)?;
         self.document = document;
-        self.options = options;
         Ok(())
     }
 
@@ -210,14 +303,33 @@ impl AttemptLimiter {
     }
 }
 
-/// Расшифровывает файл хранилища, не открывая его. Нужно, чтобы проверить
-/// резервную копию перед восстановлением повреждённого файла.
-pub fn decrypt_file(bytes: &[u8], passphrase: &Passphrase) -> Result<Document, VaultError> {
+/// Читает файл хранилища, не открывая его: открытый как есть, зашифрованный —
+/// паролем. Нужно, чтобы проверить резервную копию перед восстановлением.
+pub fn decrypt_file(bytes: &[u8], passphrase: Option<&Passphrase>) -> Result<Document, VaultError> {
+    if !is_encrypted(bytes) {
+        return plain_text(bytes).map(|markdown| Document::parse(&markdown));
+    }
+    let passphrase = passphrase.ok_or(VaultError::PassphraseRequired)?;
     decrypt(bytes, passphrase).map(|markdown| Document::parse(&markdown))
 }
 
 fn check_passphrase(passphrase: &Passphrase) -> Result<(), VaultError> {
     if passphrase.expose_secret().is_empty() { Err(VaultError::EmptyPassphrase) } else { Ok(()) }
+}
+
+/// Байты файла для документа: зашифрованные, если есть ключ, иначе текст как есть.
+fn encode(document: &Document, key: Option<&Key>) -> Result<Vec<u8>, VaultError> {
+    let markdown = Zeroizing::new(document.to_markdown());
+    match key {
+        Some(key) => encrypt(&markdown, &key.passphrase, key.options),
+        None => Ok(markdown.as_bytes().to_vec()),
+    }
+}
+
+fn plain_text(bytes: &[u8]) -> Result<Zeroizing<String>, VaultError> {
+    std::str::from_utf8(bytes)
+        .map(|text| Zeroizing::new(text.to_owned()))
+        .map_err(|_| VaultError::Damaged("это не хранилище: файл не зашифрован и не текст UTF-8".into()))
 }
 
 fn encrypt(markdown: &str, passphrase: &Passphrase, options: VaultOptions) -> Result<Vec<u8>, VaultError> {

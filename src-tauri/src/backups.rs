@@ -9,6 +9,7 @@ use mdpass_core::diff::{Change, diff};
 use mdpass_core::vault::{Passphrase, VaultError};
 use serde::Serialize;
 use tauri::State;
+use zeroize::Zeroizing;
 
 use crate::commands::{CommandError, run_blocking};
 use crate::session::{AppState, RETRY_DELAY, Session};
@@ -134,10 +135,10 @@ pub async fn restore_backup(state: State<'_, AppState>, id: String) -> Result<()
         let mut session = state.lock();
         let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
         let policy = session.policy_for(vault.path());
-        let bytes = policy.store.read(&id).map_err(io_error)?;
+        let bytes = Zeroizing::new(policy.store.read(&id).map_err(io_error)?);
         let document = vault.decrypt_backup(&bytes).map_err(other_passphrase)?;
         let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
-        vault.restore(bytes, document, policy.hook(BackupKind::Restore))?;
+        vault.restore(document, policy.hook(BackupKind::Restore))?;
         Ok(())
     })
     .await
@@ -149,10 +150,10 @@ pub async fn restore_damaged_vault(
     state: State<'_, AppState>,
     path: String,
     id: String,
-    passphrase: String,
+    passphrase: Option<String>,
 ) -> Result<(), CommandError> {
     let state = state.inner().clone();
-    let passphrase = Passphrase::from(passphrase);
+    let passphrase = passphrase.filter(|p| !p.is_empty()).map(Passphrase::from);
     run_blocking(move || {
         let mut session = state.lock();
         if let Some(wait) = session.limiter.wait(Instant::now()) {
