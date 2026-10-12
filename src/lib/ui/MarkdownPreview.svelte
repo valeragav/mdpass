@@ -27,8 +27,8 @@
   .line {
     display: flex;
     gap: 14px;
-    font-size: 13px;
-    line-height: 22px;
+    font-size: calc(13px * var(--entry-scale));
+    line-height: 1.7;
   }
 
   .n {

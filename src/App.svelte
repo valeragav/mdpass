@@ -10,6 +10,7 @@
   import EntryEditor from "./screens/EntryEditor.svelte";
   import FileError from "./screens/FileError.svelte";
   import Main from "./screens/Main.svelte";
+  import Settings from "./screens/Settings.svelte";
   import Placeholder from "./screens/Placeholder.svelte";
   import Unlock from "./screens/Unlock.svelte";
   import Welcome from "./screens/Welcome.svelte";
@@ -26,6 +27,22 @@
       api.touch().catch(() => {});
     }
   }
+
+  // Тема, акцент и размер текста из настроек.
+  let systemDark = $state(window.matchMedia("(prefers-color-scheme: dark)").matches);
+  $effect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => (systemDark = media.matches);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  });
+  $effect(() => {
+    const root = document.documentElement;
+    const { theme, accent, textSize } = app.settings;
+    root.dataset.theme = theme === "system" ? (systemDark ? "dark" : "light") : theme;
+    root.dataset.textSize = textSize;
+    root.style.setProperty("--accent-base", accent);
+  });
 
   onMount(() => {
     const unlisten = listen<string>("vault-locked", (event) => {
@@ -59,6 +76,8 @@
   <FileError />
 {:else if app.screen === "main"}
   <Main />
+{:else if app.screen === "settings"}
+  <Settings />
 {:else if app.screen === "backups"}
   <Backups />
 {:else if app.screen === "new-entry"}

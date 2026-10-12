@@ -242,7 +242,7 @@
 
   .tabs button.on {
     background: var(--bg-hover-strong);
-    color: #fff;
+    color: var(--text-strong);
   }
 
   .content {
@@ -280,13 +280,13 @@
   }
 
   .key {
-    font-size: 13px;
+    font-size: calc(13px * var(--entry-scale));
     color: var(--text-subtle);
     overflow-wrap: anywhere;
   }
 
   .value {
-    font-size: 14px;
+    font-size: calc(14px * var(--entry-scale));
     word-break: break-all;
     white-space: pre-wrap;
     padding: 8px 0;
@@ -323,6 +323,7 @@
 
   .note-text {
     flex: 1;
+    font-size: calc(14px * var(--entry-scale));
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }

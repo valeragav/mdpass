@@ -551,7 +551,7 @@
   .chip.on {
     border-color: var(--accent);
     background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: #fff;
+    color: var(--text-strong);
   }
 
   .existing {

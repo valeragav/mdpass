@@ -22,8 +22,10 @@
   --text-faint: #7c8492;
   --text-ghost: #6b7482;
 
-  /* Акцент и состояния */
-  --accent: #e5a93d;
+  --text-strong: #ffffff;
+
+  /* Акцент и состояния. --accent-base задаёт пользователь в настройках. */
+  --accent: var(--accent-base, #e5a93d);
   --on-accent: #15181d;
   --danger: #e57a7a;
   --danger-text: #f29a9a;
@@ -37,7 +39,49 @@
   --control-h: 44px;
   --control-h-sm: 40px;
 
+  /* Размер текста в записях: «Мелкий», «Обычный», «Крупный» */
+  --entry-scale: 1;
+
   color-scheme: dark;
+}
+
+/* Светлая тема. В дизайне её нет: палитра подобрана под контраст 4.5:1 для текста. */
+:root[data-theme="light"] {
+  --bg-inset: #eef0f3;
+  --bg-chrome: #f3f4f6;
+  --bg: #fafafb;
+  --bg-panel: #ffffff;
+  --bg-hover: #eceef2;
+  --bg-hover-strong: #e2e5ea;
+
+  --line: #dde0e5;
+  --line-strong: #c9ced6;
+  --line-dashed: #b4bbc6;
+
+  --text: #15181d;
+  --text-2: #262b33;
+  --text-muted: #434b57;
+  --text-subtle: #59616e;
+  --text-faint: #646c79;
+  --text-ghost: #8b93a0;
+  --text-strong: #000000;
+
+  /* Яркий акцент на белом плохо читается: затемняем его и пишем по нему белым. */
+  --accent: color-mix(in srgb, var(--accent-base, #e5a93d) 62%, black);
+  --on-accent: #ffffff;
+  --danger: #c53b3b;
+  --danger-text: #b3261e;
+  --info: #2f6fd6;
+
+  color-scheme: light;
+}
+
+:root[data-text-size="s"] {
+  --entry-scale: 0.9;
+}
+
+:root[data-text-size="l"] {
+  --entry-scale: 1.15;
 }
 
 *,

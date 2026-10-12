@@ -226,7 +226,7 @@
 
   .entry.on {
     background: color-mix(in srgb, var(--accent) 12%, transparent);
-    color: #fff;
+    color: var(--text-strong);
   }
 
   .title {

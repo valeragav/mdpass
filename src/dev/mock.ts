@@ -153,6 +153,8 @@ mockIPC(
       return null;
     case "export_backup":
       return null;
+    case "plugin:opener|reveal_item_in_dir":
+      return null;
     case "touch":
       return null;
     case "change_passphrase": {
