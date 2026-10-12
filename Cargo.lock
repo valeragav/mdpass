@@ -2714,6 +2714,8 @@ name = "mdpass-core"
 version = "0.1.0"
 dependencies = [
  "age",
+ "serde",
+ "serde_json",
  "tempfile",
  "zeroize",
 ]

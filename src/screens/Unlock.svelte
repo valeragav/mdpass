@@ -1,16 +1,59 @@
 <script lang="ts">
-  import { go } from "../lib/nav.svelte";
+  import { onDestroy } from "svelte";
+  import { api, errorText, isCommandError } from "../lib/api";
+  import { app, go } from "../lib/nav.svelte";
+  import { plural } from "../lib/text";
   import Button from "../lib/ui/Button.svelte";
+  import FileChip from "../lib/ui/FileChip.svelte";
   import Icon from "../lib/ui/Icon.svelte";
   import Logo from "../lib/ui/Logo.svelte";
   import PasswordInput from "../lib/ui/PasswordInput.svelte";
 
   let password = $state("");
+  let busy = $state(false);
+  let error = $state<string | null>(null);
+  let wrong = $state(false);
+  let retryUntil = $state(0);
+  let now = $state(Date.now());
 
-  function submit(event: SubmitEvent) {
+  const timer = setInterval(() => (now = Date.now()), 250);
+  onDestroy(() => clearInterval(timer));
+
+  let retryLeft = $derived(Math.max(0, Math.ceil((retryUntil - now) / 1000)));
+  let missing = $derived(app.vault !== null && !app.vault.exists);
+  let canSubmit = $derived(app.vault !== null && !missing && password.length > 0 && !busy && retryLeft === 0);
+
+  async function submit(event: SubmitEvent) {
     event.preventDefault();
-    // Проверка пароля появится на этапе 3, пока экран только показывает тему.
-    go("main");
+    if (!canSubmit || !app.vault) return;
+    busy = true;
+    error = null;
+    try {
+      await api.unlock(app.vault.path, password);
+      password = "";
+      go("main");
+    } catch (err) {
+      if (isCommandError(err) && (err.kind === "wrongPassphrase" || err.kind === "tooSoon")) {
+        wrong = true;
+        retryUntil = Date.now() + err.retryInMs;
+      } else if (isCommandError(err) && err.kind === "damaged") {
+        app.fileErrorDetail = err.detail;
+        go("file-error");
+      } else {
+        error = errorText(err);
+      }
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function pickFile() {
+    const file = await api.pickExistingVault();
+    if (file) {
+      app.vault = file;
+      wrong = false;
+      error = null;
+    }
   }
 </script>
 
@@ -18,21 +61,54 @@
   <Logo size="lg" vertical />
 
   <form class="card" onsubmit={submit}>
-    <div class="file mono">
-      <Icon name="file" />
-      <span>vault.md.age</span>
-    </div>
+    <FileChip label={app.vault?.name ?? "Файл не выбран"} onpick={pickFile} />
+    {#if missing}
+      <p class="error" role="alert">
+        <Icon name="error" />
+        <span>Файл не найден: {app.vault?.display}. Выберите другой файл.</span>
+      </p>
+    {/if}
 
     <div class="field">
       <label for="master">Мастер-пароль</label>
-      <PasswordInput id="master" bind:value={password} placeholder="Введите мастер-пароль" autofocus />
+      <PasswordInput
+        id="master"
+        bind:value={password}
+        placeholder="Введите мастер-пароль"
+        invalid={wrong}
+        describedby={wrong ? "unlock-error" : undefined}
+        autofocus
+      />
+      {#if wrong}
+        <p id="unlock-error" class="error" role="alert">
+          <Icon name="error" />
+          <span>
+            Неверный мастер-пароль.
+            {#if retryLeft > 0}
+              Следующая попытка через {retryLeft}
+              {plural(retryLeft, ["секунду", "секунды", "секунд"])}.
+            {/if}
+          </span>
+        </p>
+      {/if}
+      {#if error}
+        <p class="error" role="alert"><Icon name="error" /><span>{error}</span></p>
+      {/if}
     </div>
 
-    <Button variant="primary" type="submit" icon="unlock" full>Разблокировать</Button>
+    <Button variant="primary" type="submit" icon="unlock" full disabled={!canSubmit}>
+      {busy ? "Проверяем…" : "Разблокировать"}
+    </Button>
     <Button variant="ghost" size="sm" full onclick={() => go("welcome")}>Создать новое хранилище</Button>
   </form>
 
-  <p class="hint">Файл расшифровывается только в памяти и блокируется автоматически через 5 минут бездействия</p>
+  <p class="hint">
+    {#if wrong}
+      Мастер-пароль нельзя восстановить. Если он утерян, данные из файла не вернуть
+    {:else}
+      Файл расшифровывается только в памяти и блокируется автоматически через 5 минут бездействия
+    {/if}
+  </p>
 </div>
 
 <style>
@@ -58,18 +134,6 @@
     border: 1px solid var(--line);
   }
 
-  .file {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border-radius: var(--radius);
-    background: var(--bg-chrome);
-    border: 1px solid var(--line);
-    font-size: 13px;
-    color: var(--text-muted);
-  }
-
   .field {
     display: flex;
     flex-direction: column;
@@ -78,6 +142,18 @@
 
   label {
     font-weight: 500;
+  }
+
+  .error {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    color: var(--danger-text);
+    font-size: 13px;
+  }
+
+  .error :global(svg) {
+    margin-top: 1px;
   }
 
   .hint {

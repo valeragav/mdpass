@@ -17,6 +17,7 @@ use age::{DecryptError, Decryptor, Encryptor};
 use zeroize::Zeroizing;
 
 use crate::format::Document;
+use crate::fs_atomic::{write_atomic, write_new};
 
 /// Мастер-пароль. Стирается из памяти при удалении.
 pub type Passphrase = SecretString;
@@ -83,7 +84,10 @@ impl Vault {
         check_passphrase(&passphrase)?;
         let document = Document::default();
         let bytes = encrypt(&Zeroizing::new(document.to_markdown()), &passphrase, options)?;
-        write_new(path, &bytes)?;
+        write_new(path, &bytes).map_err(|err| match err.kind() {
+            io::ErrorKind::AlreadyExists => VaultError::AlreadyExists,
+            _ => VaultError::Io(err),
+        })?;
         Ok(Self { path: path.to_path_buf(), passphrase, options, document, on_disk: bytes })
     }
 
@@ -213,42 +217,4 @@ fn scrypt_work_factor(bytes: &[u8]) -> Option<u8> {
     let start = bytes.windows(marker.len()).position(|w| w == marker)? + 1;
     let line = bytes[start..].split(|&b| b == b'\n').next()?;
     std::str::from_utf8(line).ok()?.split(' ').nth(3)?.parse().ok()
-}
-
-fn temp_file_near(path: &Path) -> io::Result<tempfile::NamedTempFile> {
-    let dir = path.parent().filter(|dir| !dir.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    tempfile::Builder::new().prefix(".mdpass-").suffix(".tmp").tempfile_in(dir)
-}
-
-fn write_new(path: &Path, bytes: &[u8]) -> Result<(), VaultError> {
-    let mut temp = temp_file_near(path)?;
-    temp.write_all(bytes)?;
-    temp.as_file().sync_all()?;
-    temp.persist_noclobber(path).map_err(|err| match err.error.kind() {
-        io::ErrorKind::AlreadyExists => VaultError::AlreadyExists,
-        _ => VaultError::Io(err.error),
-    })?;
-    sync_parent(path);
-    Ok(())
-}
-
-fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let mut temp = temp_file_near(path)?;
-    temp.write_all(bytes)?;
-    temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|err| err.error)?;
-    sync_parent(path);
-    Ok(())
-}
-
-/// На Unix переименование надёжно попадает на диск только после синхронизации папки.
-fn sync_parent(path: &Path) {
-    #[cfg(unix)]
-    if let Some(dir) = path.parent()
-        && let Ok(dir) = fs::File::open(dir)
-    {
-        let _ = dir.sync_all();
-    }
-    #[cfg(not(unix))]
-    let _ = path;
 }

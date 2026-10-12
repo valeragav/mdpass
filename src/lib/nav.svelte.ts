@@ -1,5 +1,9 @@
-// Какой экран сейчас открыт. Экраны соответствуют артбордам на холсте дизайна.
+// Какой экран сейчас открыт и с каким файлом хранилища работаем.
+// Экраны соответствуют артбордам на холсте дизайна.
+import type { VaultFile } from "./api";
+
 export type Screen =
+  | "loading"
   | "welcome"
   | "unlock"
   | "file-error"
@@ -10,8 +14,18 @@ export type Screen =
   | "settings"
   | "backups";
 
-export const nav = $state<{ screen: Screen }>({ screen: "unlock" });
+interface AppState {
+  screen: Screen;
+  /// Файл, который открываем или уже открыли.
+  vault: VaultFile | null;
+  /// Куда по умолчанию положить новое хранилище.
+  defaultVault: VaultFile | null;
+  /// Техническая причина, по которой файл не открылся.
+  fileErrorDetail: string;
+}
+
+export const app = $state<AppState>({ screen: "loading", vault: null, defaultVault: null, fileErrorDetail: "" });
 
 export function go(screen: Screen) {
-  nav.screen = screen;
+  app.screen = screen;
 }

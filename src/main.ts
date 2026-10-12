@@ -10,4 +10,9 @@ import "./styles/theme.css";
 
 import App from "./App.svelte";
 
+// В обычном браузере при разработке команды Rust заменяет заглушка.
+if (import.meta.env.DEV && !("__TAURI_INTERNALS__" in window)) {
+  await import("./dev/mock");
+}
+
 mount(App, { target: document.getElementById("app")! });
