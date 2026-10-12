@@ -92,6 +92,17 @@
     scrollToCursor(() => [...(list?.querySelectorAll<HTMLElement>("[data-drop]") ?? [])].find((el) => el.dataset.drop === row.key));
   }
 
+  let search: HTMLInputElement | undefined = $state();
+
+  /// ↓ в поиске возвращает в список: к выбранной строке или к первой.
+  function onSearchKey(event: KeyboardEvent) {
+    if (event.key !== "ArrowDown" || shown.length === 0) return;
+    event.preventDefault();
+    search?.blur();
+    keyNav.zone = "list";
+    select(shown.find(isCurrent) ?? shown[0]);
+  }
+
   function openFields() {
     keyNav.zone = "fields";
     keyNav.field = 0;
@@ -119,7 +130,9 @@
         select(shown[at < 0 ? 0 : Math.min(at + 1, shown.length - 1)]);
         break;
       case "ArrowUp":
-        select(shown[at < 0 ? 0 : Math.max(at - 1, 0)]);
+        // С первой строки — в поиск.
+        if (at <= 0) search?.focus();
+        else select(shown[at - 1]);
         break;
       case "Home":
         select(shown[0]);
@@ -317,6 +330,8 @@
       <input
         type="search"
         bind:value={query}
+        bind:this={search}
+        onkeydown={onSearchKey}
         placeholder="Поиск по названию и тегам"
         aria-label="Поиск"
         disabled={empty}

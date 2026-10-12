@@ -82,6 +82,14 @@ test("стрелки ходят по списку и полям, Ctrl+C копи
   await expect(server).toHaveAttribute("aria-expanded", "false");
   await page.keyboard.press("ArrowRight");
   await expect(server).toHaveAttribute("aria-expanded", "true");
+
+  // С первой строки ↑ уходит в поиск, ↓ из поиска — обратно в список.
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByRole("searchbox", { name: "Поиск" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("searchbox", { name: "Поиск" })).not.toBeFocused();
+  await expect(sidebar(page).getByRole("button", { name: "work", exact: true })).toContainClass("on");
 });
 
 test("новая запись подставляет выбранный раздел и сохраняется", async ({ page }) => {
