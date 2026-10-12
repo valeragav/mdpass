@@ -212,6 +212,40 @@ pub async fn delete_entry(state: State<'_, AppState>, entry_id: u64) -> Result<(
     .await
 }
 
+/// Переносит запись в раздел `path`: перед записью `before_id` или в конец раздела.
+#[tauri::command]
+pub async fn move_entry(
+    state: State<'_, AppState>,
+    entry_id: u64,
+    path: Vec<String>,
+    before_id: Option<u64>,
+) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        edit(&mut session, BackupKind::Move, |doc| {
+            doc.move_entry(EntryId::from_raw(entry_id), path, before_id.map(EntryId::from_raw))
+        })
+    })
+    .await
+}
+
+/// Переносит раздел со всем содержимым в раздел `parent` (пустой — верхний уровень).
+#[tauri::command]
+pub async fn move_section(
+    state: State<'_, AppState>,
+    path: Vec<String>,
+    parent: Vec<String>,
+    before: Option<Vec<String>>,
+) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        edit(&mut session, BackupKind::Move, |doc| doc.move_section(&path, &parent, before.as_deref()))
+    })
+    .await
+}
+
 #[tauri::command]
 pub fn generate_password(length: Option<usize>) -> String {
     password::generate(length.unwrap_or(password::DEFAULT_LENGTH)).as_str().to_owned()

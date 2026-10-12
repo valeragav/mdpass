@@ -130,6 +130,31 @@ mockIPC(
       ENTRIES.splice(i, 1);
       return null;
     }
+    case "move_entry": {
+      const n = args as { entryId: number; path: string[]; beforeId: number | null };
+      const i = ENTRIES.findIndex((e) => e.id === n.entryId);
+      const [entry] = ENTRIES.splice(i, 1);
+      entry.path = n.path;
+      let at = n.beforeId === null ? -1 : ENTRIES.findIndex((e) => e.id === n.beforeId);
+      if (at < 0) {
+        const same = ENTRIES.map((e, k) => (e.path.join("/") === n.path.join("/") ? k : -1)).filter((k) => k >= 0);
+        at = same.length ? same[same.length - 1] + 1 : ENTRIES.length;
+      }
+      ENTRIES.splice(at, 0, entry);
+      return null;
+    }
+    case "move_section": {
+      const n = args as { path: string[]; parent: string[]; before: string[] | null };
+      const inside = (p: string[]) => n.path.every((part, k) => p[k] === part);
+      const block = ENTRIES.filter((e) => inside(e.path));
+      for (const e of block) {
+        ENTRIES.splice(ENTRIES.indexOf(e), 1);
+        e.path = [...n.parent, ...e.path.slice(n.path.length - 1)];
+      }
+      const at = n.before ? ENTRIES.findIndex((e) => n.before!.every((part, k) => e.path[k] === part)) : -1;
+      ENTRIES.splice(at < 0 ? ENTRIES.length : at, 0, ...block);
+      return null;
+    }
     case "generate_password":
       return Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*-_"[b % 65]).join("");
     case "list_backups":

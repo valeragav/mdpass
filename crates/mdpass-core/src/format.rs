@@ -114,6 +114,10 @@ pub enum FormatError {
     InvalidKey(String),
     InvalidTag(String),
     NotFound,
+    /// Раздел нельзя перенести внутрь самого себя.
+    IntoItself,
+    /// В целевом разделе уже есть раздел с таким названием.
+    SectionExists(String),
 }
 
 impl fmt::Display for FormatError {
@@ -129,6 +133,8 @@ impl fmt::Display for FormatError {
             ),
             Self::InvalidTag(tag) => write!(f, "Недопустимый тег «{tag}»: в теге не должно быть «,», «[» и «]»"),
             Self::NotFound => write!(f, "Запись не найдена"),
+            Self::IntoItself => write!(f, "Раздел нельзя перенести внутрь самого себя"),
+            Self::SectionExists(title) => write!(f, "Здесь уже есть раздел «{title}»"),
         }
     }
 }
@@ -347,6 +353,107 @@ impl Document {
         Ok(())
     }
 
+    /// Переносит запись в раздел `path`: перед записью `before`, если она лежит в этом
+    /// разделе, иначе в конец раздела. Недостающие разделы создаются, опустевшие убираются.
+    pub fn move_entry(&mut self, id: EntryId, path: Vec<String>, before: Option<EntryId>) -> Result<(), FormatError> {
+        let path = normalize_path(path)?;
+        let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+        if before == Some(id) {
+            return Ok(());
+        }
+        let mut work = self.clone();
+        let Node::Entry(mut entry) = work.nodes.remove(index) else { unreachable!("индекс записи") };
+        work.remove_empty_sections();
+        let parent = work.ensure_section(&path)?;
+        let paths = work.node_paths();
+        let target = before.and_then(|b| work.entry_index(b)).filter(|&i| paths[i] == path);
+        let (pos, level) = match target {
+            Some(i) => (i, work.heading_level(i).unwrap_or(MIN_ENTRY_LEVEL)),
+            None => work.entry_slot(parent),
+        };
+        if level > MAX_LEVEL {
+            return Err(FormatError::TooDeep);
+        }
+        if let Some(raw) = &mut entry.raw {
+            relevel(raw, entry.level, level);
+        }
+        entry.level = level;
+        let index = work.insert_spaced(pos, Node::Entry(entry));
+        work.close_gap_after(index);
+        *self = work;
+        Ok(())
+    }
+
+    /// Переносит раздел со всем содержимым в раздел `parent` (пустой — верхний
+    /// уровень): перед разделом-соседом `before` или в конец. Уровни заголовков
+    /// внутри сдвигаются, записи остаются не мельче `###`.
+    pub fn move_section(
+        &mut self,
+        path: &[String],
+        parent: &[String],
+        before: Option<&[String]>,
+    ) -> Result<(), FormatError> {
+        if parent.starts_with(path) && !path.is_empty() {
+            return Err(FormatError::IntoItself);
+        }
+        let start = self.section_index(path).ok_or(FormatError::NotFound)?;
+        let title = path.last().cloned().ok_or(FormatError::NotFound)?;
+        if parent != &path[..path.len() - 1] {
+            let mut target = parent.to_vec();
+            target.push(title.clone());
+            if self.section_index(&target).is_some() {
+                return Err(FormatError::SectionExists(title));
+            }
+        }
+
+        let mut work = self.clone();
+        let end = work.subtree_end(start);
+        let mut chunk: Vec<Node> = work.nodes.drain(start..end).collect();
+        work.remove_empty_sections();
+        let parent_index = work.ensure_section(parent)?;
+        let parent_level = parent_index.and_then(|p| work.heading_level(p)).unwrap_or(0);
+
+        let Some(Node::Section(head)) = chunk.first() else { unreachable!("раздел") };
+        let delta = (parent_level + 1) as isize - head.level as isize;
+        for node in &mut chunk {
+            match node {
+                Node::Section(section) => {
+                    let level = section.level as isize + delta;
+                    if !(1..=MAX_LEVEL as isize).contains(&level) {
+                        return Err(FormatError::TooDeep);
+                    }
+                    relevel(&mut section.raw, section.level, level as usize);
+                    section.level = level as usize;
+                }
+                Node::Entry(entry) => {
+                    let level = (entry.level as isize + delta).max(MIN_ENTRY_LEVEL as isize);
+                    if level > MAX_LEVEL as isize {
+                        return Err(FormatError::TooDeep);
+                    }
+                    if let Some(raw) = &mut entry.raw {
+                        relevel(raw, entry.level, level as usize);
+                    }
+                    entry.level = level as usize;
+                }
+                Node::Text(_) => {}
+            }
+        }
+
+        let sibling = before.filter(|b| !b.is_empty() && &b[..b.len() - 1] == parent);
+        let pos = sibling
+            .and_then(|b| work.section_index(b))
+            .unwrap_or_else(|| parent_index.map_or(work.nodes.len(), |p| work.subtree_end(p)));
+        let count = chunk.len();
+        let mut nodes = chunk.into_iter();
+        let first = work.insert_spaced(pos, nodes.next().expect("раздел"));
+        for (offset, node) in nodes.enumerate() {
+            work.nodes.insert(first + 1 + offset, node);
+        }
+        work.close_gap_after(first + count - 1);
+        *self = work;
+        Ok(())
+    }
+
     pub fn remove(&mut self, id: EntryId) -> Result<(), FormatError> {
         let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
         self.nodes.remove(index);
@@ -434,19 +541,56 @@ impl Document {
         }
     }
 
-    fn insert_entry(&mut self, id: EntryId, draft: EntryDraft, extra: Vec<String>) -> Result<(), FormatError> {
+    /// Позиция раздела по пути. Недостающие разделы создаются. `None` — верхний уровень.
+    fn ensure_section(&mut self, path: &[String]) -> Result<Option<usize>, FormatError> {
         let mut parent = None;
-        for depth in 0..draft.path.len() {
-            let prefix = &draft.path[..=depth];
-            let paths = self.node_paths();
-            let found =
-                (0..self.nodes.len()).find(|&i| matches!(self.nodes[i], Node::Section(_)) && paths[i] == prefix);
-            parent = Some(match found {
+        for depth in 0..path.len() {
+            let prefix = &path[..=depth];
+            parent = Some(match self.section_index(prefix) {
                 Some(i) => i,
-                None => self.create_section(parent, &draft.path[depth])?,
+                None => self.create_section(parent, &path[depth])?,
             });
         }
+        Ok(parent)
+    }
 
+    fn section_index(&self, path: &[String]) -> Option<usize> {
+        let paths = self.node_paths();
+        (0..self.nodes.len()).find(|&i| matches!(self.nodes[i], Node::Section(_)) && paths[i] == path)
+    }
+
+    /// Ставит пустую строку после узла, если за ним идёт что-то ещё.
+    fn close_gap_after(&mut self, index: usize) {
+        let has_next = index + 1 < self.nodes.len();
+        let eol = self.eol;
+        let text = match &mut self.nodes[index] {
+            Node::Text(text) => text,
+            Node::Section(section) => &mut section.raw,
+            Node::Entry(entry) => match &mut entry.raw {
+                Some(raw) => raw,
+                None => {
+                    if has_next {
+                        entry.trailing_blank = entry.trailing_blank.max(1);
+                    }
+                    return;
+                }
+            },
+        };
+        if !text.ends_with('\n') {
+            text.push_str(eol);
+        }
+        if has_next && !text.ends_with("\n\n") && !text.ends_with("\n\r\n") {
+            text.push_str(eol);
+        }
+        // В конце файла пустые строки, которые узел принёс со старого места, не нужны.
+        let blank = format!("{eol}{eol}");
+        while !has_next && text.ends_with(&blank) {
+            text.truncate(text.len() - eol.len());
+        }
+    }
+
+    fn insert_entry(&mut self, id: EntryId, draft: EntryDraft, extra: Vec<String>) -> Result<(), FormatError> {
+        let parent = self.ensure_section(&draft.path)?;
         let (pos, level) = self.entry_slot(parent);
         if level > MAX_LEVEL {
             return Err(FormatError::TooDeep);
@@ -678,18 +822,10 @@ fn render_tags(tags: &[String], eol: &str, out: &mut String) {
     out.push_str(eol);
 }
 
-/// Проверяет черновик и приводит его к виду, в котором он запишется в файл.
-fn normalize(draft: EntryDraft) -> Result<EntryDraft, FormatError> {
-    let title = draft.title.trim().to_string();
-    if title.is_empty() {
-        return Err(FormatError::EmptyTitle);
-    }
-    if title.contains(['\n', '\r']) {
-        return Err(FormatError::LineBreakInName);
-    }
-
-    let mut path = Vec::with_capacity(draft.path.len());
-    for part in draft.path {
+/// Проверяет путь к разделу и убирает пробелы по краям названий.
+fn normalize_path(parts: Vec<String>) -> Result<Vec<String>, FormatError> {
+    let mut path = Vec::with_capacity(parts.len());
+    for part in parts {
         let part = part.trim();
         if part.is_empty() {
             return Err(FormatError::EmptySection);
@@ -702,6 +838,27 @@ fn normalize(draft: EntryDraft) -> Result<EntryDraft, FormatError> {
     if path.len() >= MAX_LEVEL {
         return Err(FormatError::TooDeep);
     }
+    Ok(path)
+}
+
+/// Меняет уровень заголовка. Исходный текст сохраняется, меняются только решётки.
+fn relevel(raw: &mut String, old: usize, new: usize) {
+    if old != new && raw.len() >= old {
+        *raw = format!("{}{}", "#".repeat(new), &raw[old..]);
+    }
+}
+
+/// Проверяет черновик и приводит его к виду, в котором он запишется в файл.
+fn normalize(draft: EntryDraft) -> Result<EntryDraft, FormatError> {
+    let title = draft.title.trim().to_string();
+    if title.is_empty() {
+        return Err(FormatError::EmptyTitle);
+    }
+    if title.contains(['\n', '\r']) {
+        return Err(FormatError::LineBreakInName);
+    }
+
+    let path = normalize_path(draft.path)?;
 
     let mut fields = Vec::with_capacity(draft.fields.len());
     for field in draft.fields {

@@ -74,7 +74,7 @@ export interface DraftInput {
   fields: FieldInput[];
 }
 
-export type BackupKind = "add" | "update" | "delete" | "passphrase" | "restore" | "import";
+export type BackupKind = "add" | "update" | "delete" | "passphrase" | "restore" | "import" | "move";
 
 export interface BackupView {
   id: string;
@@ -176,6 +176,10 @@ export const api = {
   updateEntry: (entryId: number, draft: DraftInput) => invoke<void>("update_entry", { entryId, draft }),
   deleteEntry: (entryId: number) => invoke<void>("delete_entry", { entryId }),
   generatePassword: (length?: number) => invoke<string>("generate_password", { length }),
+  moveEntry: (entryId: number, path: string[], beforeId: number | null) =>
+    invoke<void>("move_entry", { entryId, path, beforeId }),
+  moveSection: (path: string[], parent: string[], before: string[] | null) =>
+    invoke<void>("move_section", { path, parent, before }),
 
   analyzeImport: (path: string, fixes: ImportFixes) => invoke<ImportPreview>("analyze_import", { path, fixes }),
   runImport: (path: string, fixes: ImportFixes) => invoke<number>("run_import", { path, fixes }),

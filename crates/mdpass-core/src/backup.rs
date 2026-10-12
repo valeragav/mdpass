@@ -27,10 +27,12 @@ pub enum BackupKind {
     Passphrase,
     Restore,
     Import,
+    Move,
 }
 
 impl BackupKind {
-    const ALL: [Self; 6] = [Self::Add, Self::Update, Self::Delete, Self::Passphrase, Self::Restore, Self::Import];
+    const ALL: [Self; 7] =
+        [Self::Add, Self::Update, Self::Delete, Self::Passphrase, Self::Restore, Self::Import, Self::Move];
 
     fn as_str(self) -> &'static str {
         match self {
@@ -40,6 +42,7 @@ impl BackupKind {
             Self::Passphrase => "passphrase",
             Self::Restore => "restore",
             Self::Import => "import",
+            Self::Move => "move",
         }
     }
 

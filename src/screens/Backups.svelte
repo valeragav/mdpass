@@ -27,6 +27,7 @@
     passphrase: "Перед сменой мастер-пароля",
     restore: "Перед восстановлением копии",
     import: "Перед импортом",
+    move: "Перед перемещением",
   };
 
   const dateFormat = new Intl.DateTimeFormat("ru", {

@@ -84,6 +84,8 @@ pub fn run() {
             entries::update_entry,
             entries::delete_entry,
             entries::generate_password,
+            entries::move_entry,
+            entries::move_section,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
