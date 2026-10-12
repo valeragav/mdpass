@@ -13,6 +13,7 @@
   import { showToast } from "../../lib/toast.svelte";
   import Button from "../../lib/ui/Button.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
+  import { isNavKey, keyNav, scrollToCursor } from "../../lib/keys.svelte";
   import { entryHint, loadEntries, vault } from "../../lib/vault.svelte";
 
   interface Props {
@@ -67,6 +68,85 @@
     const key = pathKey(group.path);
     if (collapsed.has(key)) collapsed.delete(key);
     else collapsed.add(key);
+  }
+
+  // ---- Стрелки -----------------------------------------------------------
+  // Курсор списка — это выбранная строка: запись или раздел.
+
+  function isCurrent(row: Row): boolean {
+    if (row.kind === "group") return vault.selectedSection !== null && pathKey(vault.selectedSection) === pathKey(row.path);
+    return vault.selectedSection === null && row.entry.id === vault.selectedId;
+  }
+
+  function select(row: Row | undefined) {
+    if (!row) return;
+    if (row.kind === "group") vault.selectedSection = row.path;
+    else {
+      vault.selectedId = row.entry.id;
+      vault.selectedSection = null;
+    }
+    // Иначе Enter и пробел нажали бы кнопку, на которой раньше щёлкнули мышью.
+    if (document.activeElement instanceof HTMLElement && list?.contains(document.activeElement)) {
+      document.activeElement.blur();
+    }
+    scrollToCursor(() => [...(list?.querySelectorAll<HTMLElement>("[data-drop]") ?? [])].find((el) => el.dataset.drop === row.key));
+  }
+
+  function openFields() {
+    keyNav.zone = "fields";
+    keyNav.field = 0;
+  }
+
+  // ↑ ↓ — по строкам, → — раскрыть раздел или перейти к полям записи, ← — свернуть раздел
+  // или подняться к разделу, Enter — то же, что щелчок.
+  function onKey(event: KeyboardEvent) {
+    if (keyNav.zone !== "list" || !isNavKey(event) || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    if (shown.length === 0) return;
+    const at = shown.findIndex(isCurrent);
+    const row = shown[at];
+    const open = row?.kind === "group" && (filtering || !collapsed.has(pathKey(row.path)));
+    const parent = () => {
+      const path = row.kind === "group" ? row.path.slice(0, -1) : row.entry.path;
+      for (let i = at - 1; i >= 0; i--) {
+        const r = shown[i];
+        if (r.kind === "group" && pathKey(r.path) === pathKey(path)) return r;
+      }
+      return undefined;
+    };
+
+    switch (event.key) {
+      case "ArrowDown":
+        select(shown[at < 0 ? 0 : Math.min(at + 1, shown.length - 1)]);
+        break;
+      case "ArrowUp":
+        select(shown[at < 0 ? 0 : Math.max(at - 1, 0)]);
+        break;
+      case "Home":
+        select(shown[0]);
+        break;
+      case "End":
+        select(shown[shown.length - 1]);
+        break;
+      case "ArrowRight":
+        if (!row) select(shown[0]);
+        else if (row.kind === "entry") openFields();
+        else if (!open) toggle(row);
+        else select(shown[at + 1]);
+        break;
+      case "ArrowLeft":
+        if (!row) return;
+        if (row.kind === "group" && open && !filtering) toggle(row);
+        else select(parent());
+        break;
+      case "Enter":
+        if (!row) return;
+        if (row.kind === "entry") openFields();
+        else toggle(row);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
   }
 
   let tagChips = $derived.by(() => {
@@ -228,6 +308,8 @@
   }
 </script>
 
+<svelte:window onkeydown={onKey} />
+
 <aside class:dragging={dragging !== null}>
   <div class="top">
     <div class="search">
@@ -280,6 +362,7 @@
           onclick={() => {
             if (suppressClick) return;
             vault.selectedSection = row.path;
+            keyNav.zone = "list";
             toggle(row);
           }}
         >
@@ -300,6 +383,7 @@
             if (suppressClick) return;
             vault.selectedId = row.entry.id;
             vault.selectedSection = null;
+            keyNav.zone = "list";
           }}
         >
           <span class="title">{row.entry.title}</span>

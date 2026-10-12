@@ -7,6 +7,7 @@
   import Button from "../../lib/ui/Button.svelte";
   import MarkdownPreview from "../../lib/ui/MarkdownPreview.svelte";
   import IconButton from "../../lib/ui/IconButton.svelte";
+  import { isNavKey, keyNav, scrollToCursor } from "../../lib/keys.svelte";
   import { isNote, revealKey, toggleReveal, vault } from "../../lib/vault.svelte";
 
   interface Props {
@@ -24,6 +25,11 @@
   let indexed = $derived(entry.fields.map((field, index) => ({ field, index })));
   let plain = $derived(indexed.filter(({ field }) => !isNote(field.key)));
   let notes = $derived(indexed.filter(({ field }) => isNote(field.key)));
+  // Порядок полей на экране: сначала обычные, потом заметки. По нему ходят стрелки.
+  let order = $derived([...plain, ...notes]);
+  let cursor = $derived(
+    keyNav.zone === "fields" && mode === "card" && order.length > 0 ? Math.min(keyNav.field, order.length - 1) : -1,
+  );
 
   function shownValue(index: number): string | null {
     const field = entry.fields[index];
@@ -57,6 +63,64 @@
     }
   }
 
+  let root: HTMLElement | undefined = $state();
+
+  function moveCursor(to: number) {
+    keyNav.field = Math.max(0, Math.min(to, order.length - 1));
+    scrollToCursor(() => root?.querySelector(`[data-cursor="${keyNav.field}"]`));
+  }
+
+  function pick(pos: number) {
+    keyNav.zone = "fields";
+    keyNav.field = pos;
+  }
+
+  // ↑ ↓ — по полям, ← или Esc — назад в список, Ctrl+C или Enter — скопировать,
+  // пробел — показать или скрыть секрет.
+  function onKey(event: KeyboardEvent) {
+    if (keyNav.zone !== "fields" || !isNavKey(event)) return;
+    const current = cursor >= 0 ? order[cursor] : undefined;
+    if (event.ctrlKey || event.metaKey) {
+      const key = event.key.toLowerCase();
+      // Выделенный мышью текст Ctrl+C копирует как обычно.
+      if ((key === "c" || key === "с") && current && !window.getSelection()?.toString()) {
+        event.preventDefault();
+        copy(current.index);
+      }
+      return;
+    }
+    if (event.shiftKey) return;
+    switch (event.key) {
+      case "ArrowDown":
+        moveCursor(cursor + 1);
+        break;
+      case "ArrowUp":
+        moveCursor(cursor - 1);
+        break;
+      case "Home":
+        moveCursor(0);
+        break;
+      case "End":
+        moveCursor(order.length - 1);
+        break;
+      case "ArrowLeft":
+      case "Escape":
+        keyNav.zone = "list";
+        break;
+      case "Enter":
+        if (!current) return;
+        copy(current.index);
+        break;
+      case " ":
+        if (!current?.field.secret) return;
+        reveal(current.index);
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+  }
+
   // Так запись выглядит в файле. Секреты скрыты, пока их не показали.
   let lines = $derived(
     previewLines({
@@ -70,7 +134,9 @@
   let fileName = $derived(app.vault?.name.replace(/\.age$/, "") ?? "vault.md");
 </script>
 
-<main>
+<svelte:window onkeydown={onKey} />
+
+<main bind:this={root}>
   <div class="head">
     <div class="crumb mono">{entry.path.join(" / ")}</div>
     <div class="title-row">
@@ -110,9 +176,10 @@
       {#if mode === "card"}
         {#if plain.length > 0}
           <div class="fields">
-            {#each plain as { field, index } (index)}
+            {#each plain as { field, index }, pos (index)}
               {@const value = shownValue(index)}
-              <div class="field">
+              <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+              <div class="field" class:cursor={cursor === pos} data-cursor={pos} onclick={() => pick(pos)}>
                 <span class="key mono">{field.key}</span>
                 <span class="value mono" class:masked={value === null}>{value ?? MASK}</span>
                 <div class="field-actions">
@@ -138,9 +205,11 @@
           <p class="hint">В записи нет полей</p>
         {/if}
 
-        {#each notes as { field, index } (index)}
+        {#each notes as { field, index }, i (index)}
           {@const value = shownValue(index)}
-          <div class="note">
+          {@const pos = plain.length + i}
+          <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+          <div class="note" class:cursor={cursor === pos} data-cursor={pos} onclick={() => pick(pos)}>
             <span class="note-key mono">{field.key}</span>
             <span class="note-text">{value ?? MASK}</span>
             {#if field.secret}
@@ -283,6 +352,18 @@
     min-height: 56px;
     padding: 0 8px 0 18px;
     background: var(--bg-panel);
+  }
+
+  /* Поле под курсором клавиатуры: Ctrl+C или Enter скопирует его. */
+  .field.cursor {
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .note.cursor {
+    border-style: solid;
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
   }
 
   .key {

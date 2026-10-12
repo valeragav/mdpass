@@ -58,6 +58,32 @@ test("раздел сворачивается и разворачивается"
   await expect(sidebar(page).getByRole("button", { name: /beta/ })).toBeVisible();
 });
 
+test("стрелки ходят по списку и полям, Ctrl+C копирует поле под курсором", async ({ page }) => {
+  await unlock(page);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("heading", { name: "beta (стейдж)" })).toBeVisible();
+
+  await page.keyboard.press("ArrowRight");
+  const cursor = page.locator(".field.cursor");
+  await expect(cursor).toContainText("ssh");
+  await page.keyboard.press("ArrowDown");
+  await expect(cursor).toContainText("password");
+  await page.keyboard.press(" ");
+  await expect(page.getByText("Zk4!rW8nYb1s")).toBeVisible();
+  await page.keyboard.press("Control+c");
+  await expect(page.getByRole("status")).toContainText("Секрет скопирован");
+
+  await page.keyboard.press("ArrowLeft");
+  await expect(cursor).toHaveCount(0);
+  await page.keyboard.press("ArrowLeft");
+  const server = sidebar(page).getByRole("button", { name: "server", exact: true });
+  await expect(server).toContainClass("on");
+  await page.keyboard.press("ArrowLeft");
+  await expect(server).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("ArrowRight");
+  await expect(server).toHaveAttribute("aria-expanded", "true");
+});
+
 test("новая запись подставляет выбранный раздел и сохраняется", async ({ page }) => {
   await unlock(page);
   await sidebar(page).getByRole("button", { name: "site", exact: true }).click();
