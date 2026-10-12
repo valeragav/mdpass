@@ -10,6 +10,9 @@ export function plural(n: number, [one, few, many]: [string, string, string]): s
 
 export const MIN_MASTER_LENGTH = 8;
 
+/// Минимальная длина мастер-пароля. Повторяет `Protection::min_passphrase_chars` в Rust.
+export const minMasterLength = (protection: "strong" | "weak" | "none") => (protection === "weak" ? 4 : MIN_MASTER_LENGTH);
+
 /// Надёжность пароля от 0 до 4, как на экране первого запуска в дизайне.
 export function strength(password: string): { score: number; label: string } {
   let score = 0;

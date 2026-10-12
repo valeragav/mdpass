@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api, errorText, isCommandError, type VaultFile } from "../lib/api";
   import { app, go } from "../lib/nav.svelte";
-  import { MIN_MASTER_LENGTH, strength } from "../lib/text";
+  import { minMasterLength, strength } from "../lib/text";
   import Button from "../lib/ui/Button.svelte";
   import FileChip from "../lib/ui/FileChip.svelte";
   import Icon from "../lib/ui/Icon.svelte";
@@ -31,10 +31,11 @@
   let existing = $state(false);
 
   let meter = $derived(strength(master));
-  let tooShort = $derived(master.length > 0 && master.length < MIN_MASTER_LENGTH);
+  let minLength = $derived(minMasterLength(protection));
+  let tooShort = $derived(master.length > 0 && master.length < minLength);
   let mismatch = $derived(repeat.length > 0 && repeat !== master);
   let canCreate = $derived(
-    file !== null && !busy && (!encrypted || (master.length >= MIN_MASTER_LENGTH && repeat === master)),
+    file !== null && !busy && (!encrypted || (master.length >= minLength && repeat === master)),
   );
   let barColor = $derived(meter.score <= 1 ? "var(--danger)" : meter.score === 2 ? "var(--accent)" : "var(--info)");
 
@@ -142,7 +143,7 @@
         <span class="meter-label" aria-live="polite">{meter.label}</span>
       </div>
       {#if tooShort}
-        <span class="note">Не короче {MIN_MASTER_LENGTH} символов</span>
+        <span class="note">Не короче {minLength} символов</span>
       {/if}
     </div>
 

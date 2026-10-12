@@ -102,6 +102,15 @@ impl Protection {
         }
     }
 
+    /// Минимальная длина мастер-пароля. При слабом шифровании разрешён короткий
+    /// пароль: пользователь сам выбрал скорость вместо стойкости.
+    fn min_passphrase_chars(self) -> usize {
+        match self {
+            Self::Weak => 4,
+            Self::Strong | Self::None => 8,
+        }
+    }
+
     fn options(self) -> Option<VaultOptions> {
         match self {
             Self::Strong => Some(VaultOptions::STRONG),
@@ -171,7 +180,7 @@ pub async fn create_vault(
         let vault = match (protection.options(), passphrase) {
             (None, _) => Vault::create_plain(&path)?,
             (Some(options), Some(passphrase)) => {
-                check_length(&passphrase)?;
+                check_length(&passphrase, protection)?;
                 Vault::create(&path, passphrase, options)?
             }
             (Some(_), None) => return Err(CommandError::EmptyPassphrase),
@@ -187,10 +196,11 @@ pub async fn create_vault(
     .await
 }
 
-fn check_length(passphrase: &Passphrase) -> Result<(), CommandError> {
-    if passphrase.expose_secret().chars().count() < MIN_PASSPHRASE_CHARS {
+fn check_length(passphrase: &Passphrase, protection: Protection) -> Result<(), CommandError> {
+    let min = protection.min_passphrase_chars();
+    if passphrase.expose_secret().chars().count() < min {
         return Err(CommandError::Invalid {
-            message: format!("Мастер-пароль должен быть не короче {MIN_PASSPHRASE_CHARS} символов"),
+            message: format!("Мастер-пароль должен быть не короче {min} символов")
         });
     }
     Ok(())
@@ -247,9 +257,6 @@ pub fn touch(state: State<'_, AppState>) {
     state.lock().touch(Instant::now());
 }
 
-/// Минимальная длина мастер-пароля, как на экране первого запуска.
-const MIN_PASSPHRASE_CHARS: usize = 8;
-
 /// Меняет защиту открытого хранилища: пароль, силу шифрования или снимает шифрование.
 /// У зашифрованного хранилища сначала проверяется текущий пароль.
 /// После смены защиты файл получает подходящее имя: `vault.md.age` или `vault.md`.
@@ -284,7 +291,7 @@ pub async fn change_protection<R: Runtime>(
         let key = match (protection.options(), new) {
             (None, _) => None,
             (Some(options), Some(new)) => {
-                check_length(&new)?;
+                check_length(&new, protection)?;
                 Some((new, options))
             }
             (Some(_), None) => return Err(CommandError::EmptyPassphrase),
@@ -321,4 +328,21 @@ pub(crate) async fn run_blocking<T: Send + 'static>(
     tauri::async_runtime::spawn_blocking(work)
         .await
         .unwrap_or_else(|err| Err(CommandError::Io { message: err.to_string() }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pass(s: &str) -> Passphrase {
+        Passphrase::from(s.to_string())
+    }
+
+    #[test]
+    fn weak_encryption_allows_a_four_character_passphrase() {
+        assert!(check_length(&pass("abcd"), Protection::Weak).is_ok());
+        assert!(check_length(&pass("abc"), Protection::Weak).is_err());
+        assert!(check_length(&pass("abcd"), Protection::Strong).is_err());
+        assert!(check_length(&pass("abcdefgh"), Protection::Strong).is_ok());
+    }
 }

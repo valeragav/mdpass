@@ -2,7 +2,7 @@
   import { api, errorText, isCommandError } from "../../lib/api";
   import { app } from "../../lib/nav.svelte";
   import { showToast } from "../../lib/toast.svelte";
-  import { MIN_MASTER_LENGTH, strength } from "../../lib/text";
+  import { minMasterLength, strength } from "../../lib/text";
   import Button from "../../lib/ui/Button.svelte";
   import ConfirmDialog from "../../lib/ui/ConfirmDialog.svelte";
   import PasswordInput from "../../lib/ui/PasswordInput.svelte";
@@ -28,12 +28,13 @@
   let encryptedNow = $derived(app.protection !== null && app.protection !== "none");
   let encryptNext = $derived(protection !== "none");
   let meter = $derived(strength(next));
+  let minLength = $derived(minMasterLength(protection));
   let mismatch = $derived(repeat.length > 0 && repeat !== next);
   let canSave = $derived(
     !busy &&
       (encryptedNow || encryptNext) &&
       (!encryptedNow || current.length > 0) &&
-      (!encryptNext || (next.length >= MIN_MASTER_LENGTH && repeat === next)),
+      (!encryptNext || (next.length >= minLength && repeat === next)),
   );
 
   function close() {
@@ -85,7 +86,7 @@
     {#if encryptNext}
       <div class="field">
         <label for="cp-new">{encryptedNow ? "Новый мастер-пароль" : "Мастер-пароль"}</label>
-        <PasswordInput id="cp-new" bind:value={next} placeholder={`Не короче ${MIN_MASTER_LENGTH} символов`} />
+        <PasswordInput id="cp-new" bind:value={next} placeholder={`Не короче ${minLength} символов`} />
         {#if next}<span class="note">Надёжность пароля: {meter.label.toLowerCase() || "—"}</span>{/if}
         {#if encryptedNow}<span class="note">Можно ввести тот же пароль, чтобы сменить только силу шифрования.</span>{/if}
       </div>
