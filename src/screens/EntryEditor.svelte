@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { untrack } from "svelte";
+  import { onDestroy, tick, untrack } from "svelte";
   import { api, errorText, type EntryView, type FieldInput } from "../lib/api";
   import { isSecretName, parsePath, parseTags } from "../lib/entryText";
   import { app, go } from "../lib/nav.svelte";
@@ -129,6 +129,55 @@
     r.keepFrom = null;
     r.shown = true;
   }
+
+  // ---- Порядок полей ------------------------------------------------------
+  // Поле перетаскивается за ручку слева или переносится Alt+↑ / Alt+↓. Порядок полей
+  // в файле — тот же, что здесь.
+
+  function moveRow(from: number, to: number) {
+    if (to < 0 || to >= rows.length || to === from) return;
+    const [moved] = rows.splice(from, 1);
+    rows.splice(to, 0, moved);
+  }
+
+  async function onFieldKey(event: KeyboardEvent, r: Row, needAlt = true) {
+    if (needAlt !== event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown")) return;
+    event.preventDefault();
+    // Строка переезжает в DOM, и фокус с неё слетает: возвращаем его.
+    const focused = document.activeElement as HTMLElement | null;
+    const from = rows.indexOf(r);
+    moveRow(from, from + (event.key === "ArrowUp" ? -1 : 1));
+    await tick();
+    focused?.focus();
+  }
+
+  let draggingUid = $state<number | null>(null);
+
+  function startDrag(event: PointerEvent, r: Row) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    draggingUid = r.uid;
+    window.addEventListener("pointermove", onDragMove);
+    window.addEventListener("pointerup", stopDrag, { once: true });
+    window.addEventListener("pointercancel", stopDrag, { once: true });
+  }
+
+  function onDragMove(event: PointerEvent) {
+    const over = document.elementFromPoint(event.clientX, event.clientY)?.closest<HTMLElement>("[data-field]");
+    if (!over || draggingUid === null) return;
+    const from = rows.findIndex((x) => x.uid === draggingUid);
+    const to = rows.findIndex((x) => String(x.uid) === over.dataset.field);
+    if (to >= 0) moveRow(from, to);
+  }
+
+  function stopDrag() {
+    window.removeEventListener("pointermove", onDragMove);
+    window.removeEventListener("pointerup", stopDrag);
+    window.removeEventListener("pointercancel", stopDrag);
+    draggingUid = null;
+  }
+
+  onDestroy(stopDrag);
 
   function draft() {
     // Поля без ключа и пустые поля из шаблона в файл не пишутся.
@@ -276,7 +325,28 @@
             <div class="label">Поля</div>
             <div class="fields">
               {#each rows as r (r.uid)}
-                <div class="field">
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <div
+                  class="field"
+                  class:dragging={draggingUid === r.uid}
+                  data-field={r.uid}
+                  onkeydown={(e) => onFieldKey(e, r)}
+                >
+                  <button
+                    type="button"
+                    class="grip"
+                    aria-label={`Переместить поле ${r.key || "без названия"}`}
+                    title="Перетащите, чтобы поменять порядок. С клавиатуры — Alt+↑ и Alt+↓"
+                    onpointerdown={(e) => startDrag(e, r)}
+                    onkeydown={(e) => {
+                      // На самой ручке поле переносят просто стрелки.
+                      e.stopPropagation();
+                      onFieldKey(e, r, false);
+                    }}
+                    disabled={rows.length < 2}
+                  >
+                    <Icon name="grip" size={16} stroke={2.5} />
+                  </button>
                   <input
                     class="input key mono"
                     value={r.key}
@@ -582,11 +652,44 @@
 
   .field {
     display: grid;
-    grid-template-columns: 150px minmax(0, 1fr) auto;
+    grid-template-columns: auto 150px minmax(0, 1fr) auto;
     align-items: center;
     gap: 10px;
-    padding: 8px 8px 8px 12px;
+    padding: 8px 8px 8px 4px;
     background: var(--bg-panel);
+  }
+
+  /* Перетаскиваемое поле */
+  .field.dragging {
+    background: color-mix(in srgb, var(--accent) 10%, var(--bg-panel));
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .grip {
+    width: 24px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    color: var(--text-faint);
+    cursor: grab;
+    touch-action: none;
+  }
+
+  .grip:hover:not(:disabled) {
+    color: var(--text-muted);
+    background: var(--bg-hover);
+  }
+
+  .grip:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+
+  .field.dragging .grip {
+    cursor: grabbing;
+    color: var(--accent);
   }
 
   .field .input {

@@ -188,6 +188,38 @@ test("много тегов не вытесняют список записей"
   await expect(more).toBeVisible();
 });
 
+test("в редакторе порядок полей меняется перетаскиванием и Alt+стрелками", async ({ page }) => {
+  await unlock(page);
+  await sidebar(page).getByRole("button", { name: /БД заказов/ }).click();
+  await page.getByRole("button", { name: "Редактировать" }).click();
+  const keys = page.getByLabel("Ключ поля");
+  await expect(keys).toHaveCount(3); // note редактируется отдельно
+  await expect(keys.nth(0)).toHaveValue("port");
+
+  // Alt+↓ в поле ввода переносит поле ниже, фокус остаётся в нём.
+  await keys.nth(0).focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(keys.nth(0)).toHaveValue("user");
+  await expect(keys.nth(1)).toHaveValue("port");
+  await expect(keys.nth(1)).toBeFocused();
+
+  // Перетаскивание за ручку: password — наверх.
+  const grip = page.getByRole("button", { name: "Переместить поле password" });
+  const top = (await page.getByRole("button", { name: "Переместить поле user" }).boundingBox())!;
+  const box = (await grip.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(top.x + top.width / 2, top.y + top.height / 2 - 4, { steps: 8 });
+  await page.mouse.up();
+  await expect(keys.nth(0)).toHaveValue("password");
+  await expect(keys.nth(1)).toHaveValue("user");
+  await expect(keys.nth(2)).toHaveValue("port");
+
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Изменения сохранены");
+  await expect(page.locator("main .key")).toHaveText(["password", "user", "port"]);
+});
+
 test("выход из редактора с правками спрашивает подтверждение", async ({ page }) => {
   await unlock(page);
   await page.getByRole("button", { name: "Редактировать" }).click();
