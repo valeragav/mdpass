@@ -175,7 +175,7 @@ mockIPC(
         { id: "20261010T090000000Z-passphrase.age", createdMs: Date.UTC(2026, 9, 10, 9, 0), kind: "passphrase" },
       ];
     case "backups_location":
-      return "C:/Users/demo/AppData/Local/com.mdpass.app/backups/vault.md.age-1a2b3c4d";
+      return "C:/Users/demo/AppData/Local/io.github.valeragav.mdpass/backups/vault.md.age-1a2b3c4d";
     case "preview_backup": {
       const id = (args as { id: string }).id;
       if (id.includes("passphrase")) throw { kind: "otherPassphrase" };

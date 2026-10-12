@@ -20,6 +20,32 @@ const LOCKED_EVENT: &str = "vault-locked";
 /// Как часто проверять бездействие.
 const IDLE_CHECK: Duration = Duration::from_secs(5);
 
+/// Идентификатор приложения раньше был `com.mdpass.app`. Настройки и резервные копии
+/// из старых папок переносятся в новые один раз, при первом запуске.
+fn move_old_app_data(app: &AppHandle) {
+    const OLD_IDENTIFIER: &str = "com.mdpass.app";
+    let paths = app.path();
+    let moves = [
+        paths
+            .app_config_dir()
+            .ok()
+            .map(|dir| (dir.with_file_name(OLD_IDENTIFIER).join("config.json"), dir.join("config.json"))),
+        paths
+            .app_local_data_dir()
+            .ok()
+            .map(|dir| (dir.with_file_name(OLD_IDENTIFIER).join("backups"), dir.join("backups"))),
+    ];
+    for (from, to) in moves.into_iter().flatten() {
+        if !from.exists() || to.exists() {
+            continue;
+        }
+        let moved = to.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::rename(&from, &to));
+        if let Err(err) = moved {
+            eprintln!("не удалось перенести {} в {}: {err}", from.display(), to.display());
+        }
+    }
+}
+
 /// Rust сам следит за бездействием: хранилище закроется, даже если интерфейс завис.
 fn watch_idle(app: AppHandle) {
     std::thread::spawn(move || {
@@ -42,6 +68,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            move_old_app_data(app.handle());
             let config_path = app.path().app_config_dir()?.join("config.json");
             // Копии лежат в локальной папке приложения: им не нужно синхронизироваться
             // между компьютерами, и они не засоряют папку с хранилищем.
