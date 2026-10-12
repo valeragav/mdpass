@@ -73,10 +73,12 @@ pub fn reveal_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> 
 
 #[tauri::command]
 pub fn copy_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> Result<(), CommandError> {
-    let value = field_value(&state.lock(), entry_id, field)?;
+    let session = state.lock();
+    let value = field_value(&session, entry_id, field)?;
     #[cfg(desktop)]
     {
-        crate::clipboard::copy(value).map_err(|err| CommandError::Clipboard { message: err.to_string() })
+        crate::clipboard::copy(value, session.clipboard_clear_after())
+            .map_err(|err| CommandError::Clipboard { message: err.to_string() })
     }
     #[cfg(mobile)]
     {

@@ -42,7 +42,9 @@
       <span class="dot">·</span>
       <span>{status}</span>
     </div>
-    <span>автоблокировка через 5 мин</span>
+    <span>
+      {app.settings.autoLockMinutes > 0 ? `автоблокировка через ${app.settings.autoLockMinutes} мин` : "автоблокировка выключена"}
+    </span>
   </footer>
 </div>
 

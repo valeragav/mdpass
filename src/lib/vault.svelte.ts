@@ -38,12 +38,17 @@ export async function deleteEntry(entryId: number, title: string) {
   showToast(`Запись «${title}» удалена`);
 }
 
-export async function lockVault() {
-  await api.lock();
+/// Стирает записи из памяти интерфейса и показывает экран разблокировки.
+export function forgetEntries() {
   vault.entries = [];
   vault.revealed = {};
   vault.selectedId = null;
   go("unlock");
+}
+
+export async function lockVault() {
+  await api.lock();
+  forgetEntries();
 }
 
 /// Поля-заметки показываются отдельно от остальных полей.

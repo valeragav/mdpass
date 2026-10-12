@@ -2625,6 +2625,7 @@ dependencies = [
 name = "mdpass"
 version = "0.1.0"
 dependencies = [
+ "age",
  "arboard",
  "mdpass-core",
  "serde",
@@ -2633,6 +2634,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tempfile",
  "zeroize",
 ]
 

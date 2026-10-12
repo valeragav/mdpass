@@ -1,6 +1,6 @@
 // Какой экран сейчас открыт и с каким файлом хранилища работаем.
 // Экраны соответствуют артбордам на холсте дизайна.
-import type { VaultFile } from "./api";
+import type { Settings, VaultFile } from "./api";
 
 export type Screen =
   | "loading"
@@ -22,9 +22,26 @@ interface AppState {
   defaultVault: VaultFile | null;
   /// Техническая причина, по которой файл не открылся.
   fileErrorDetail: string;
+  settings: Settings;
 }
 
-export const app = $state<AppState>({ screen: "loading", vault: null, defaultVault: null, fileErrorDetail: "" });
+export const app = $state<AppState>({
+  screen: "loading",
+  vault: null,
+  defaultVault: null,
+  fileErrorDetail: "",
+  // До ответа Rust действуют значения по умолчанию из дизайна.
+  settings: {
+    autoLockMinutes: 5,
+    clipboardClearSeconds: 30,
+    lockOnMinimize: true,
+    backupsEnabled: true,
+    backupsToKeep: 30,
+    theme: "dark",
+    textSize: "m",
+    accent: "#E5A93D",
+  },
+});
 
 export function go(screen: Screen) {
   app.screen = screen;

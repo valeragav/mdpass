@@ -3,6 +3,7 @@
   import { app, go } from "../../lib/nav.svelte";
   import { showToast } from "../../lib/toast.svelte";
   import { previewLines } from "../../lib/entryText";
+  import { plural } from "../../lib/text";
   import Button from "../../lib/ui/Button.svelte";
   import MarkdownPreview from "../../lib/ui/MarkdownPreview.svelte";
   import IconButton from "../../lib/ui/IconButton.svelte";
@@ -42,7 +43,9 @@
     const field = entry.fields[index];
     try {
       await api.copyField(entry.id, index);
-      showToast(field.secret ? "Секрет скопирован · буфер очистится через 30 с" : `Скопировано: ${field.key}`);
+      const clear = app.settings.clipboardClearSeconds;
+      const after = clear > 0 ? ` · буфер очистится через ${clear} с` : "";
+      showToast((field.secret ? "Секрет скопирован" : `Скопировано: ${field.key}`) + after);
     } catch (err) {
       showToast(errorText(err));
     }
@@ -119,7 +122,12 @@
               </div>
             {/each}
           </div>
-          <p class="hint">Буфер обмена очищается через 30 секунд после копирования</p>
+          {#if app.settings.clipboardClearSeconds > 0}
+            <p class="hint">
+              Буфер обмена очищается через {app.settings.clipboardClearSeconds}
+              {plural(app.settings.clipboardClearSeconds, ["секунду", "секунды", "секунд"])} после копирования
+            </p>
+          {/if}
         {:else if notes.length === 0}
           <p class="hint">В записи нет полей</p>
         {/if}

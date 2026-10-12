@@ -9,10 +9,24 @@ export interface VaultFile {
   exists: boolean;
 }
 
+export interface Settings {
+  /// 0 — не блокировать.
+  autoLockMinutes: number;
+  /// 0 — не очищать.
+  clipboardClearSeconds: number;
+  lockOnMinimize: boolean;
+  backupsEnabled: boolean;
+  backupsToKeep: number;
+  theme: "dark" | "light" | "system";
+  textSize: "s" | "m" | "l";
+  accent: string;
+}
+
 export interface Status {
   unlocked: boolean;
   lastVault: VaultFile | null;
   defaultVault: VaultFile | null;
+  settings: Settings;
 }
 
 export type CommandError =
@@ -102,6 +116,10 @@ export const api = {
   createVault: (path: string, passphrase: string) => invoke<void>("create_vault", { path, passphrase }),
   unlock: (path: string, passphrase: string) => invoke<void>("unlock", { path, passphrase }),
   lock: () => invoke<void>("lock"),
+  touch: () => invoke<void>("touch"),
+  changePassphrase: (current: string, next: string) =>
+    invoke<void>("change_passphrase", { current, new: next }),
+  updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
   entries: () => invoke<EntryView[]>("entries"),
   revealField: (entryId: number, field: number) => invoke<string>("reveal_field", { entryId, field }),
   copyField: (entryId: number, field: number) => invoke<void>("copy_field", { entryId, field }),

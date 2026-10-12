@@ -1,4 +1,4 @@
-//! Копирование значений в буфер обмена с очисткой через 30 секунд.
+//! Копирование значений в буфер обмена с очисткой через заданное время.
 //!
 //! Значение помечается как «не сохранять в журнал буфера», чтобы оно не попало
 //! в историю Windows (Win+V), облачный буфер и менеджеры буфера на macOS и Linux.
@@ -15,15 +15,19 @@ use arboard::SetExtLinux;
 use arboard::SetExtWindows;
 use zeroize::Zeroizing;
 
-pub const CLEAR_AFTER: Duration = Duration::from_secs(30);
-
 /// Последнее скопированное значение и номер копирования. По номеру старый таймер
 /// понимает, что после него скопировали что-то ещё.
 static LAST: Mutex<Option<(u64, Zeroizing<String>)>> = Mutex::new(None);
 
-pub fn copy(value: Zeroizing<String>) -> Result<(), arboard::Error> {
+/// Копирует значение. Если `clear_after` задано, через это время буфер очистится,
+/// а при блокировке и выходе — сразу.
+pub fn copy(value: Zeroizing<String>, clear_after: Option<Duration>) -> Result<(), arboard::Error> {
     let mut clipboard = Clipboard::new()?;
     clipboard.set().exclude_from_history().text(value.as_str())?;
+    let Some(clear_after) = clear_after else {
+        *LAST.lock().unwrap_or_else(|p| p.into_inner()) = None;
+        return Ok(());
+    };
 
     let generation = {
         let mut last = LAST.lock().unwrap_or_else(|p| p.into_inner());
@@ -32,7 +36,7 @@ pub fn copy(value: Zeroizing<String>) -> Result<(), arboard::Error> {
         generation
     };
     std::thread::spawn(move || {
-        std::thread::sleep(CLEAR_AFTER);
+        std::thread::sleep(clear_after);
         clear_if_current(Some(generation));
     });
     Ok(())

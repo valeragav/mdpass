@@ -3,11 +3,13 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use age::secrecy::ExposeSecret;
 use mdpass_core::vault::{Passphrase, Vault, VaultError, VaultOptions};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime, State};
 
 use crate::session::{AppState, RETRY_DELAY};
+use crate::settings::Settings;
 
 const DEFAULT_FILE_NAME: &str = "vault.md.age";
 
@@ -93,6 +95,7 @@ pub struct Status {
     last_vault: Option<VaultFile>,
     /// Куда предложить положить новое хранилище.
     default_vault: Option<VaultFile>,
+    settings: Settings,
 }
 
 #[tauri::command]
@@ -103,6 +106,7 @@ pub fn status<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Stat
         unlocked: session.vault.is_some(),
         last_vault: session.config.last_vault.as_deref().map(|path| describe(&app, path)),
         default_vault,
+        settings: Settings::from(&session.config),
     }
 }
 
@@ -120,6 +124,7 @@ pub async fn create_vault(state: State<'_, AppState>, path: String, passphrase: 
         let vault = Vault::create(&path, passphrase, VaultOptions::default())?;
         let mut session = state.lock();
         session.vault = Some(vault);
+        session.touch(Instant::now());
         session.config.last_vault = Some(path);
         session.save_config();
         Ok(())
@@ -142,6 +147,7 @@ pub async fn unlock(state: State<'_, AppState>, path: String, passphrase: String
             Ok(vault) => {
                 session.limiter.succeeded();
                 session.vault = Some(vault);
+                session.touch(Instant::now());
                 session.config.last_vault = Some(path);
                 session.save_config();
                 Ok(())
@@ -159,9 +165,44 @@ pub async fn unlock(state: State<'_, AppState>, path: String, passphrase: String
 
 #[tauri::command]
 pub fn lock(state: State<'_, AppState>) {
-    state.lock().vault = None;
-    #[cfg(desktop)]
-    crate::clipboard::clear_ours();
+    state.lock().lock_vault();
+}
+
+/// Интерфейс сообщает, что пользователь что-то делает: откладывает автоблокировку.
+#[tauri::command]
+pub fn touch(state: State<'_, AppState>) {
+    state.lock().touch(Instant::now());
+}
+
+/// Минимальная длина мастер-пароля, как на экране первого запуска.
+const MIN_PASSPHRASE_CHARS: usize = 8;
+
+#[tauri::command]
+pub async fn change_passphrase(state: State<'_, AppState>, current: String, new: String) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    let current = Passphrase::from(current);
+    let new = Passphrase::from(new);
+    run_blocking(move || {
+        let mut session = state.lock();
+        if let Some(wait) = session.limiter.wait(Instant::now()) {
+            return Err(CommandError::TooSoon { retry_in_ms: millis(wait) });
+        }
+        let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
+        if !vault.passphrase_matches(&current) {
+            session.limiter.failed(Instant::now());
+            return Err(CommandError::WrongPassphrase { retry_in_ms: millis(RETRY_DELAY) });
+        }
+        if new.expose_secret().chars().count() < MIN_PASSPHRASE_CHARS {
+            return Err(CommandError::Invalid {
+                message: format!("Новый мастер-пароль должен быть не короче {MIN_PASSPHRASE_CHARS} символов"),
+            });
+        }
+        session.limiter.succeeded();
+        let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
+        vault.change_passphrase(new, VaultOptions::default())?;
+        Ok(())
+    })
+    .await
 }
 
 /// Шифрование занимает около секунды: уводим его из потока, который обслуживает окно.

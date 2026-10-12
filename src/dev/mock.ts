@@ -62,10 +62,21 @@ function applyDraft(draft: Draft, current?: (typeof ENTRIES)[number]) {
 }
 
 let unlocked = false;
+let settings = {
+  autoLockMinutes: 5,
+  clipboardClearSeconds: 30,
+  lockOnMinimize: true,
+  backupsEnabled: true,
+  backupsToKeep: 30,
+  theme: "dark",
+  textSize: "m",
+  accent: "#E5A93D",
+};
 let lastVault: string | null = `${HOME}/Documents/vault.md.age`;
 let retryUntil = 0;
 
-mockIPC((cmd, args) => {
+mockIPC(
+  (cmd, args) => {
   const a = (args ?? {}) as Record<string, string>;
   switch (cmd) {
     case "status":
@@ -73,6 +84,7 @@ mockIPC((cmd, args) => {
         unlocked,
         lastVault: lastVault ? describe(lastVault) : null,
         defaultVault: describe(`${HOME}/Documents/vault.md.age`),
+        settings,
       };
     case "describe_path":
       return describe(a.path);
@@ -120,6 +132,17 @@ mockIPC((cmd, args) => {
     }
     case "generate_password":
       return Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*-_"[b % 65]).join("");
+    case "touch":
+      return null;
+    case "change_passphrase": {
+      const n = args as { current: string; new: string };
+      if (n.current !== "password1") throw { kind: "wrongPassphrase", retryInMs: 3000 };
+      if (n.new.length < 8) throw { kind: "invalid", message: "Новый мастер-пароль должен быть не короче 8 символов" };
+      return null;
+    }
+    case "update_settings":
+      settings = (args as { settings: typeof settings }).settings;
+      return settings;
     case "lock":
       unlocked = false;
       return null;
@@ -130,4 +153,6 @@ mockIPC((cmd, args) => {
     default:
       throw new Error(`нет заглушки для команды ${cmd}`);
   }
-});
+},
+  { shouldMockEvents: true },
+);
