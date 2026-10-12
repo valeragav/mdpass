@@ -1,0 +1,23 @@
+[workspace]
+resolver = "3"
+members = ["src-tauri", "crates/mdpass-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+# Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+# scrypt без оптимизаций в отладочной сборке работает в десятки раз медленнее:
+# открытие хранилища в `tauri dev` и тесты стали бы долгими.
+[profile.dev.package.scrypt]
+opt-level = 3
+
+[profile.dev.package.sha2]
+opt-level = 3

@@ -1,23 +1,20 @@
 {
+  "extends": "@tsconfig/svelte/tsconfig.json",
   "compilerOptions": {
-    "target": "ES2020",
-    "useDefineForClassFields": true,
+    "target": "ES2022",
     "module": "ESNext",
-    "lib": ["ES2020", "DOM"],
-    "skipLibCheck": true,
-
-    /* Bundler mode */
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-
-    /* Linting */
+    "skipLibCheck": true,
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "types": ["svelte", "vite/client"]
   },
-  "include": ["src"]
+  "include": ["src/**/*.ts", "src/**/*.svelte"]
 }
