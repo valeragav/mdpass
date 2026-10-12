@@ -2754,7 +2754,7 @@ dependencies = [
 
 [[package]]
 name = "mdpass"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "age",
  "arboard",
@@ -2772,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "mdpass-core"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "age",
  "getrandom 0.3.4",
