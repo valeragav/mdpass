@@ -115,6 +115,21 @@ export interface ImportPreview {
   places: { path: string[]; title: string }[];
 }
 
+/// Вызывается, когда команда наткнулась на файл, изменённый вне приложения.
+let onChangedOnDisk: (() => void) | null = null;
+export function whenChangedOnDisk(handler: () => void) {
+  onChangedOnDisk = handler;
+}
+
+async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (err) {
+    if (isCommandError(err) && err.kind === "changedOnDisk") onChangedOnDisk?.();
+    throw err;
+  }
+}
+
 export function isCommandError(err: unknown): err is CommandError {
   return typeof err === "object" && err !== null && "kind" in err;
 }
@@ -138,7 +153,7 @@ export function errorText(err: unknown): string {
     case "passphraseRequired":
       return "Файл зашифрован: введите мастер-пароль";
     case "changedOnDisk":
-      return "Файл изменён вне приложения. Изменения не записаны: заблокируйте хранилище и откройте его заново";
+      return "Файл изменён вне приложения. Изменение не записано";
     case "locked":
       return "Хранилище заблокировано";
     case "entryNotFound":
@@ -165,16 +180,17 @@ export const api = {
   unlock: (path: string, passphrase: string | null) => invoke<Protection>("unlock", { path, passphrase }),
   lock: () => invoke<void>("lock"),
   touch: () => invoke<void>("touch"),
+  reloadVault: () => invoke<void>("reload_vault"),
   /// Файл заодно переименовывается под защиту: `vault.md.age` или `vault.md`.
   changeProtection: (current: string | null, next: string | null, protection: Protection) =>
-    invoke<{ protection: Protection; vault: VaultFile }>("change_protection", { current, new: next, protection }),
+    call<{ protection: Protection; vault: VaultFile }>("change_protection", { current, new: next, protection }),
   updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
   /// `path` — для файла, который не открывается; иначе копии открытого хранилища.
   listBackups: (path?: string) => invoke<BackupView[]>("list_backups", { path }),
   /// Папка копий открытого хранилища в папке приложения.
   backupsLocation: () => invoke<string>("backups_location"),
   previewBackup: (id: string) => invoke<BackupChange[]>("preview_backup", { id }),
-  restoreBackup: (id: string) => invoke<void>("restore_backup", { id }),
+  restoreBackup: (id: string) => call<void>("restore_backup", { id }),
   restoreDamagedVault: (path: string, id: string, passphrase: string | null) =>
     invoke<void>("restore_damaged_vault", { path, id, passphrase }),
   async exportBackup(id: string, path?: string): Promise<boolean> {
@@ -186,17 +202,17 @@ export const api = {
   entries: () => invoke<EntryView[]>("entries"),
   revealField: (entryId: number, field: number) => invoke<string>("reveal_field", { entryId, field }),
   copyField: (entryId: number, field: number) => invoke<void>("copy_field", { entryId, field }),
-  addEntry: (draft: DraftInput) => invoke<number>("add_entry", { draft }),
-  updateEntry: (entryId: number, draft: DraftInput) => invoke<void>("update_entry", { entryId, draft }),
-  deleteEntry: (entryId: number) => invoke<void>("delete_entry", { entryId }),
+  addEntry: (draft: DraftInput) => call<number>("add_entry", { draft }),
+  updateEntry: (entryId: number, draft: DraftInput) => call<void>("update_entry", { entryId, draft }),
+  deleteEntry: (entryId: number) => call<void>("delete_entry", { entryId }),
   generatePassword: (length?: number) => invoke<string>("generate_password", { length }),
   moveEntry: (entryId: number, path: string[], beforeId: number | null) =>
-    invoke<void>("move_entry", { entryId, path, beforeId }),
+    call<void>("move_entry", { entryId, path, beforeId }),
   moveSection: (path: string[], parent: string[], before: string[] | null) =>
-    invoke<void>("move_section", { path, parent, before }),
+    call<void>("move_section", { path, parent, before }),
 
   analyzeImport: (path: string, fixes: ImportFixes) => invoke<ImportPreview>("analyze_import", { path, fixes }),
-  runImport: (path: string, fixes: ImportFixes) => invoke<number>("run_import", { path, fixes }),
+  runImport: (path: string, fixes: ImportFixes) => call<number>("run_import", { path, fixes }),
   deleteImportSource: (path: string) => invoke<void>("delete_import_source", { path }),
 
   /// Диалог выбора открытого .md-файла для импорта.

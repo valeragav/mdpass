@@ -174,6 +174,19 @@ impl Vault {
         Ok(Self { path: path.to_path_buf(), key: Some(Key { passphrase, options }), document, on_disk: bytes })
     }
 
+    /// Перечитывает файл с диска с текущим паролем: после того как файл изменили вне
+    /// приложения, например синхронизацией. Несохранённых изменений у хранилища не
+    /// бывает, поэтому ничего не теряется. Если файл перешифровали другим паролем,
+    /// возвращает [`VaultError::WrongPassphrase`] и остаётся прежним.
+    pub fn reload(&mut self) -> Result<(), VaultError> {
+        let reopened = match &self.key {
+            Some(key) => Self::open_with(&self.path, Some(key.passphrase.clone()))?,
+            None => Self::open_plain(&self.path)?,
+        };
+        *self = reopened;
+        Ok(())
+    }
+
     pub fn path(&self) -> &Path {
         &self.path
     }

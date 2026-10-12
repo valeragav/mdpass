@@ -254,6 +254,26 @@ pub fn lock(state: State<'_, AppState>) {
     state.lock().lock_vault();
 }
 
+/// Перечитывает файл, который изменили вне приложения. Если его перешифровали
+/// другим паролем, хранилище блокируется: нужно открыть его заново.
+#[tauri::command]
+pub async fn reload_vault(state: State<'_, AppState>) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
+        match vault.reload() {
+            Ok(()) => Ok(()),
+            Err(err @ (VaultError::WrongPassphrase | VaultError::PassphraseRequired)) => {
+                session.lock_vault();
+                Err(err.into())
+            }
+            Err(err) => Err(err.into()),
+        }
+    })
+    .await
+}
+
 /// Интерфейс сообщает, что пользователь что-то делает: откладывает автоблокировку.
 #[tauri::command]
 pub fn touch(state: State<'_, AppState>) {

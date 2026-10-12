@@ -1,11 +1,13 @@
 <script lang="ts">
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
-  import { api } from "./lib/api";
+  import { api, errorText, isCommandError, whenChangedOnDisk } from "./lib/api";
+  import Button from "./lib/ui/Button.svelte";
+  import ConfirmDialog from "./lib/ui/ConfirmDialog.svelte";
   import { showToast } from "./lib/toast.svelte";
   import { app, go } from "./lib/nav.svelte";
   import Toast from "./lib/ui/Toast.svelte";
-  import { forgetEntries, vault } from "./lib/vault.svelte";
+  import { forgetEntries, loadEntries, vault } from "./lib/vault.svelte";
   import Backups from "./screens/Backups.svelte";
   import EntryEditor from "./screens/EntryEditor.svelte";
   import FileError from "./screens/FileError.svelte";
@@ -43,6 +45,37 @@
     root.dataset.textSize = textSize;
     root.style.setProperty("--accent-base", accent);
   });
+
+  // Файл изменили вне приложения: синхронизация или другая копия mdpass.
+  let changedOnDisk = $state(false);
+  let reloading = $state(false);
+  whenChangedOnDisk(() => (changedOnDisk = true));
+
+  async function reloadVault() {
+    reloading = true;
+    try {
+      await api.reloadVault();
+      await loadEntries();
+      // Новую запись можно сохранить ещё раз из той же формы. У правки существующей
+      // записи номер записи после перечитывания другой, поэтому — к списку.
+      if (app.screen === "new-entry") {
+        showToast("Файл перечитан. Нажмите «Сохранить запись» ещё раз");
+      } else {
+        go("main");
+        showToast("Файл перечитан. Повторите последнее изменение");
+      }
+    } catch (err) {
+      if (isCommandError(err) && (err.kind === "wrongPassphrase" || err.kind === "passphraseRequired")) {
+        forgetEntries();
+        showToast("Файл перешифровали другим паролем: откройте его заново");
+      } else {
+        showToast(errorText(err));
+      }
+    } finally {
+      reloading = false;
+      changedOnDisk = false;
+    }
+  }
 
   onMount(() => {
     const unlisten = listen<string>("vault-locked", (event) => {
@@ -92,5 +125,16 @@
 {/if}
 
 <Toast />
+
+<ConfirmDialog open={changedOnDisk} title="Файл изменён вне приложения" oncancel={() => (changedOnDisk = false)}>
+  Похоже, файл обновила синхронизация или другая копия mdpass. Последнее изменение не записано, чтобы не затереть
+  чужие правки. Перечитайте файл и повторите изменение.
+  {#snippet actions()}
+    <Button onclick={() => (changedOnDisk = false)}>Позже</Button>
+    <Button variant="primary" autofocus disabled={reloading} onclick={reloadVault}>
+      {reloading ? "Перечитываем…" : "Перечитать файл"}
+    </Button>
+  {/snippet}
+</ConfirmDialog>
 
 <svelte:window onpointerdown={onActivity} onkeydown={onActivity} onwheel={onActivity} onpointermove={onActivity} />

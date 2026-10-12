@@ -309,3 +309,31 @@ fn vault_from_a_newer_app_is_not_opened() {
     fs::write(&path, "<!-- mdpass:2 -->\n\n**a**\nk: v\n").unwrap();
     assert!(matches!(Vault::open_plain(&path), Err(VaultError::NewerFormat(2))));
 }
+
+#[test]
+fn vault_changed_elsewhere_can_be_reloaded_and_saved_again() {
+    let dir = TempDir::new().unwrap();
+    let path = vault_path(&dir);
+    let mut ours = Vault::create(&path, pass("p"), FAST).unwrap();
+    let mut theirs = Vault::open(&path, pass("p")).unwrap();
+    theirs.document_mut().add(sample_draft()).unwrap();
+    theirs.save().unwrap();
+
+    ours.document_mut().add(sample_draft()).unwrap();
+    assert!(matches!(ours.save(), Err(VaultError::ChangedOnDisk)));
+    ours.reload().unwrap();
+    assert_eq!(ours.document().entries().len(), 1, "видна запись из другой копии");
+    ours.document_mut().add(sample_draft()).unwrap();
+    ours.save().unwrap();
+    assert_eq!(Vault::open(&path, pass("p")).unwrap().document().entries().len(), 2);
+}
+
+#[test]
+fn reload_after_a_passphrase_change_elsewhere_reports_it() {
+    let dir = TempDir::new().unwrap();
+    let path = vault_path(&dir);
+    let mut ours = Vault::create(&path, pass("p"), FAST).unwrap();
+    let mut theirs = Vault::open(&path, pass("p")).unwrap();
+    theirs.change_passphrase(pass("другой-пароль"), FAST).unwrap();
+    assert!(matches!(ours.reload(), Err(VaultError::WrongPassphrase)));
+}

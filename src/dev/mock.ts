@@ -122,7 +122,11 @@ mockIPC(
       if (value === undefined) throw { kind: "entryNotFound" };
       return cmd === "reveal_field" ? value : null;
     }
+    case "reload_vault":
+      return null;
     case "add_entry": {
+      // Запись «конфликт» изображает файл, который изменили вне приложения.
+      if ((args as { draft: Draft }).draft.title === "конфликт") throw { kind: "changedOnDisk" };
       const id = nextId++;
       ENTRIES.push({ id, ...applyDraft((args as { draft: Draft }).draft) });
       return id;

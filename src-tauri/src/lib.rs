@@ -97,6 +97,7 @@ pub fn run() {
             commands::unlock,
             commands::lock,
             commands::touch,
+            commands::reload_vault,
             commands::change_protection,
             settings::update_settings,
             backups::list_backups,
