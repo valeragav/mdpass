@@ -5,3 +5,9 @@ edition.workspace = true
 description = "Ядро mdpass: формат хранилища, шифрование, резервные копии"
 
 [dependencies]
+age = "0.12.1"
+tempfile = "3.27.0"
+zeroize = "1.9.1"
+
+[dev-dependencies]
+tempfile = "3.27.0"

@@ -235,3 +235,11 @@ fn unknown_entry_id_is_an_error() {
     assert_eq!(doc.remove(id), Err(FormatError::NotFound));
     assert_eq!(doc.update(id, draft(&[], "a", vec![], &[])), Err(FormatError::NotFound));
 }
+
+#[test]
+fn debug_output_hides_secret_values() {
+    let doc = Document::parse("### a\npassword: hunter2\nlogin: admin\n");
+    let entries = format!("{:?}", doc.entries());
+    assert!(!entries.contains("hunter2") && entries.contains("admin"), "{entries}");
+    assert!(!format!("{doc:?}").contains("hunter2"));
+}

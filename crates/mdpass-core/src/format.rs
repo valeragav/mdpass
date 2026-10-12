@@ -18,6 +18,8 @@
 
 use std::fmt;
 
+use zeroize::Zeroize;
+
 /// Самый глубокий заголовок Markdown.
 const MAX_LEVEL: usize = 6;
 /// Новые записи пишутся заголовком не мельче `###`, чтобы в файле их было легко отличить
@@ -51,7 +53,7 @@ impl EntryId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Field {
     pub key: String,
     /// Строки многострочного значения разделены `\n`.
@@ -65,6 +67,20 @@ impl Field {
         let key = key.into();
         let secret = is_secret_name(&key);
         Self { key, value: value.into(), secret }
+    }
+}
+
+impl Drop for Field {
+    fn drop(&mut self) {
+        self.value.zeroize();
+    }
+}
+
+/// Значение секретного поля в отладочный вывод не попадает.
+impl fmt::Debug for Field {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let value: &dyn fmt::Debug = if self.secret { &"<скрыто>" } else { &self.value };
+        f.debug_struct("Field").field("key", &self.key).field("value", value).field("secret", &self.secret).finish()
     }
 }
 
@@ -117,7 +133,7 @@ impl fmt::Display for FormatError {
 
 impl std::error::Error for FormatError {}
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Document {
     bom: bool,
     eol: &'static str,
@@ -125,7 +141,34 @@ pub struct Document {
     next_id: u64,
 }
 
-#[derive(Debug, Clone)]
+/// В исходном тексте есть секреты, поэтому в отладочный вывод он не попадает.
+impl fmt::Debug for Document {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let entries = self.nodes.iter().filter(|node| matches!(node, Node::Entry(_))).count();
+        f.debug_struct("Document").field("entries", &entries).finish_non_exhaustive()
+    }
+}
+
+/// Стирает текст файла из памяти. Копии, которые остались после перевыделения
+/// строк, так не стираются: это защита от случайной утечки, а не гарантия.
+impl Drop for Document {
+    fn drop(&mut self) {
+        for node in &mut self.nodes {
+            match node {
+                Node::Text(text) => text.zeroize(),
+                Node::Section(section) => section.raw.zeroize(),
+                Node::Entry(entry) => {
+                    entry.extra.zeroize();
+                    if let Some(raw) = &mut entry.raw {
+                        raw.zeroize();
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
 enum Node {
     /// Текст вне записей: начало файла или текст раздела.
     Text(String),
@@ -133,7 +176,7 @@ enum Node {
     Entry(EntryNode),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct Section {
     level: usize,
     title: String,
@@ -141,7 +184,7 @@ struct Section {
     raw: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 struct EntryNode {
     id: EntryId,
     level: usize,
