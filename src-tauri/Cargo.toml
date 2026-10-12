@@ -25,6 +25,8 @@ serde = { version = "1", features = ["derive"] }
 tauri-plugin-dialog = "2"
 zeroize = "1"
 age = "0.12.1"
+tauri-plugin-log = "2"
+log = "0.4"
 
 # Буфер обмена на компьютерах. На телефонах появится вместе с мобильной сборкой.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

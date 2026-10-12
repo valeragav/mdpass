@@ -67,7 +67,7 @@ impl Session {
     pub fn save_config(&self) {
         // Без сохранённых настроек приложение работает, просто не вспомнит файл.
         if let Err(err) = self.config.save(&self.config_path) {
-            eprintln!("не удалось сохранить настройки: {err}");
+            log::warn!("не удалось сохранить настройки: {err}");
         }
     }
 }

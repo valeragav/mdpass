@@ -10,6 +10,7 @@ mod settings;
 use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 
 use crate::session::{AppState, Session};
 
@@ -19,6 +20,16 @@ const LOCKED_EVENT: &str = "vault-locked";
 
 /// Как часто проверять бездействие.
 const IDLE_CHECK: Duration = Duration::from_secs(5);
+
+/// Сбой приложения попадает в журнал, а не только в консоль, которой у
+/// установленного приложения нет.
+fn log_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        log::error!("сбой: {info}");
+        default(info);
+    }));
+}
 
 /// Идентификатор приложения раньше был `com.mdpass.app`. Настройки и резервные копии
 /// из старых папок переносятся в новые один раз, при первом запуске.
@@ -41,7 +52,7 @@ fn move_old_app_data(app: &AppHandle) {
         }
         let moved = to.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::rename(&from, &to));
         if let Err(err) = moved {
-            eprintln!("не удалось перенести {} в {}: {err}", from.display(), to.display());
+            log::warn!("не удалось перенести {} в {}: {err}", from.display(), to.display());
         }
     }
 }
@@ -65,9 +76,25 @@ fn watch_idle(app: AppHandle) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Журнал ошибок в папке журналов приложения: до трёх файлов по мегабайту.
+        // Значения записей и пароли сюда не пишутся, только пути и системные ошибки.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .clear_targets()
+                .targets([
+                    Target::new(TargetKind::LogDir { file_name: Some("mdpass".into()) }),
+                    Target::new(TargetKind::Stderr),
+                ])
+                .level(log::LevelFilter::Info)
+                .max_file_size(1_000_000)
+                .rotation_strategy(RotationStrategy::KeepSome(3))
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
+            log_panics();
+            log::info!("mdpass {} запущен", app.package_info().version);
             move_old_app_data(app.handle());
             let config_path = app.path().app_config_dir()?.join("config.json");
             // Копии лежат в локальной папке приложения: им не нужно синхронизироваться

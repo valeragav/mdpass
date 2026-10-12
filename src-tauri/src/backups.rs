@@ -36,7 +36,7 @@ impl Session {
     pub fn backup_store(&self, vault_path: &Path) -> BackupStore {
         let store = BackupStore::in_root(&self.backups_root, vault_path);
         if let Err(err) = BackupStore::for_vault(vault_path).move_to(&store) {
-            eprintln!("не удалось перенести старые резервные копии: {err}");
+            log::warn!("не удалось перенести старые резервные копии: {err}");
         }
         store
     }

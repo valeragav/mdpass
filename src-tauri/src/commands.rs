@@ -55,14 +55,20 @@ impl From<VaultError> for CommandError {
             VaultError::EmptyPassphrase => Self::EmptyPassphrase,
             VaultError::AlreadyExists => Self::AlreadyExists,
             VaultError::WrongPassphrase => Self::WrongPassphrase { retry_in_ms: millis(RETRY_DELAY) },
-            VaultError::Damaged(detail) => Self::Damaged { detail },
+            VaultError::Damaged(detail) => {
+                log::warn!("файл хранилища не читается: {detail}");
+                Self::Damaged { detail }
+            }
             VaultError::ChangedOnDisk => Self::ChangedOnDisk,
             VaultError::PassphraseRequired => Self::PassphraseRequired,
             VaultError::NewerFormat(version) => Self::Invalid {
                 message: format!("Файл записан более новой версией mdpass (формат {version}). Обновите приложение"),
             },
             VaultError::Io(err) if err.kind() == std::io::ErrorKind::NotFound => Self::NotFound,
-            VaultError::Io(err) => Self::Io { message: err.to_string() },
+            VaultError::Io(err) => {
+                log::warn!("ошибка доступа к файлу: {err}");
+                Self::Io { message: err.to_string() }
+            }
         }
     }
 }
@@ -302,7 +308,7 @@ pub fn rename_vault<R: Runtime>(
     let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
     vault.rename_to(&new_path)?;
     if let Err(err) = session.backup_store(&old_path).move_to(&session.backup_store(&new_path)) {
-        eprintln!("не удалось перенести резервные копии: {err}");
+        log::warn!("не удалось перенести резервные копии: {err}");
     }
     session.config.renamed(&old_path, new_path.clone());
     session.save_config();
@@ -368,7 +374,7 @@ pub async fn change_protection<R: Runtime>(
         let wanted = vault.conventional_path();
         if wanted != old_path && vault.rename_to(&wanted).is_ok() {
             if let Err(err) = session.backup_store(&old_path).move_to(&session.backup_store(&wanted)) {
-                eprintln!("не удалось перенести резервные копии: {err}");
+                log::warn!("не удалось перенести резервные копии: {err}");
             }
             session.config.renamed(&old_path, wanted);
             session.save_config();
