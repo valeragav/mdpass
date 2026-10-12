@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { api } from "../lib/api";
   import { app, go } from "../lib/nav.svelte";
   import Button from "../lib/ui/Button.svelte";
@@ -6,6 +7,21 @@
   import Logo from "../lib/ui/Logo.svelte";
 
   let detailsOpen = $state(true);
+  let hasBackups = $state(false);
+
+  onMount(async () => {
+    if (!app.vault) return;
+    try {
+      hasBackups = (await api.listBackups(app.vault.path)).length > 0;
+    } catch {
+      hasBackups = false;
+    }
+  });
+
+  function openBackups() {
+    app.backupsFrom = "file-error";
+    go("backups");
+  }
 
   async function pickFile() {
     const file = await api.pickExistingVault();
@@ -27,6 +43,9 @@
     </div>
 
     <div class="actions">
+      {#if hasBackups}
+        <Button variant="primary" icon="generate" full onclick={openBackups}>Восстановить из резервной копии</Button>
+      {/if}
       <Button icon="file" full onclick={pickFile}>Выбрать другой файл</Button>
       <Button variant="ghost" size="sm" full onclick={() => go("unlock")}>Попробовать ещё раз</Button>
     </div>

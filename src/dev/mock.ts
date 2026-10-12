@@ -132,6 +132,27 @@ mockIPC(
     }
     case "generate_password":
       return Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*-_"[b % 65]).join("");
+    case "list_backups":
+      return [
+        { id: "20261012T084203123Z-update.age", createdMs: Date.UTC(2026, 9, 12, 8, 42), kind: "update" },
+        { id: "20261012T071500000Z-add.age", createdMs: Date.UTC(2026, 9, 12, 7, 15), kind: "add" },
+        { id: "20261011T150300000Z-delete.age", createdMs: Date.UTC(2026, 9, 11, 15, 3), kind: "delete" },
+        { id: "20261010T090000000Z-passphrase.age", createdMs: Date.UTC(2026, 9, 10, 9, 0), kind: "passphrase" },
+      ];
+    case "preview_backup": {
+      const id = (args as { id: string }).id;
+      if (id.includes("passphrase")) throw { kind: "otherPassphrase" };
+      if (id.includes("add")) return [{ kind: "removed", title: "example.test" }, { kind: "changed", title: "БД заказов", keys: ["note"] }];
+      return [{ kind: "changed", title: "БД заказов", keys: ["note"] }];
+    }
+    case "restore_backup":
+      return null;
+    case "restore_damaged_vault":
+      if ((args as { passphrase: string }).passphrase !== "password1") throw { kind: "wrongPassphrase", retryInMs: 3000 };
+      unlocked = true;
+      return null;
+    case "export_backup":
+      return null;
     case "touch":
       return null;
     case "change_passphrase": {

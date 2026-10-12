@@ -118,21 +118,57 @@ impl Vault {
 
     /// Шифрует документ и записывает файл.
     pub fn save(&mut self) -> Result<(), VaultError> {
+        self.save_with_backup(|_| Ok(()))
+    }
+
+    /// Как [`save`](Self::save), но сначала передаёт `backup` байты файла, который
+    /// сейчас лежит на диске. Если копия не удалась, файл не перезаписывается.
+    pub fn save_with_backup(&mut self, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<(), VaultError> {
         let bytes = encrypt(&Zeroizing::new(self.document.to_markdown()), &self.passphrase, self.options)?;
-        self.replace_file(bytes)
+        self.replace_file(bytes, backup)
     }
 
     /// Шифрует файл новым паролем и сразу записывает его.
     pub fn change_passphrase(&mut self, passphrase: Passphrase, options: VaultOptions) -> Result<(), VaultError> {
+        self.change_passphrase_with_backup(passphrase, options, |_| Ok(()))
+    }
+
+    pub fn change_passphrase_with_backup(
+        &mut self,
+        passphrase: Passphrase,
+        options: VaultOptions,
+        backup: impl FnOnce(&[u8]) -> io::Result<()>,
+    ) -> Result<(), VaultError> {
         check_passphrase(&passphrase)?;
         let bytes = encrypt(&Zeroizing::new(self.document.to_markdown()), &passphrase, options)?;
-        self.replace_file(bytes)?;
+        self.replace_file(bytes, backup)?;
         self.passphrase = passphrase;
         self.options = options;
         Ok(())
     }
 
-    fn replace_file(&mut self, bytes: Vec<u8>) -> Result<(), VaultError> {
+    /// Расшифровывает резервную копию текущим паролем. Копия, сделанная до смены
+    /// пароля, даёт [`VaultError::WrongPassphrase`].
+    pub fn decrypt_backup(&self, bytes: &[u8]) -> Result<Document, VaultError> {
+        decrypt_file(bytes, &self.passphrase)
+    }
+
+    /// Заменяет файл байтами резервной копии. `document` — её расшифровка из
+    /// [`decrypt_backup`](Self::decrypt_backup).
+    pub fn restore(
+        &mut self,
+        bytes: Vec<u8>,
+        document: Document,
+        backup: impl FnOnce(&[u8]) -> io::Result<()>,
+    ) -> Result<(), VaultError> {
+        let options = scrypt_work_factor(&bytes).map_or(self.options, |work_factor| VaultOptions { work_factor });
+        self.replace_file(bytes, backup)?;
+        self.document = document;
+        self.options = options;
+        Ok(())
+    }
+
+    fn replace_file(&mut self, bytes: Vec<u8>, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<(), VaultError> {
         let current = match fs::read(&self.path) {
             Ok(current) => current,
             Err(err) if err.kind() == io::ErrorKind::NotFound => return Err(VaultError::ChangedOnDisk),
@@ -141,6 +177,7 @@ impl Vault {
         if current != self.on_disk {
             return Err(VaultError::ChangedOnDisk);
         }
+        backup(&current)?;
         write_atomic(&self.path, &bytes)?;
         self.on_disk = bytes;
         Ok(())
@@ -171,6 +208,12 @@ impl AttemptLimiter {
     pub fn succeeded(&mut self) {
         self.blocked_until = None;
     }
+}
+
+/// Расшифровывает файл хранилища, не открывая его. Нужно, чтобы проверить
+/// резервную копию перед восстановлением повреждённого файла.
+pub fn decrypt_file(bytes: &[u8], passphrase: &Passphrase) -> Result<Document, VaultError> {
+    decrypt(bytes, passphrase).map(|markdown| Document::parse(&markdown))
 }
 
 fn check_passphrase(passphrase: &Passphrase) -> Result<(), VaultError> {

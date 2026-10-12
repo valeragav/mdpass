@@ -407,6 +407,7 @@
     oncancel={() => (askDelete = false)}
   >
     Запись исчезнет из {fileName}.
+    {#if app.settings.backupsEnabled}Перед удалением создаётся резервная копия, из неё запись можно вернуть.{/if}
     {#snippet actions()}
       <Button autofocus onclick={() => (askDelete = false)}>Отмена</Button>
       <Button variant="danger" icon="trash" onclick={confirmDelete}>Удалить</Button>

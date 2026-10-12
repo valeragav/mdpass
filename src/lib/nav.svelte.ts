@@ -23,6 +23,8 @@ interface AppState {
   /// Техническая причина, по которой файл не открылся.
   fileErrorDetail: string;
   settings: Settings;
+  /// Куда вернуться с экрана резервных копий.
+  backupsFrom: Screen;
 }
 
 export const app = $state<AppState>({
@@ -30,6 +32,7 @@ export const app = $state<AppState>({
   vault: null,
   defaultVault: null,
   fileErrorDetail: "",
+  backupsFrom: "main",
   // До ответа Rust действуют значения по умолчанию из дизайна.
   settings: {
     autoLockMinutes: 5,

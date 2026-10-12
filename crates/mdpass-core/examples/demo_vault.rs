@@ -49,7 +49,12 @@ fn main() -> ExitCode {
         entry(
             &["work", "server"],
             "БД заказов",
-            &[("port", "5432"), ("user", "orders_app"), ("password", "*"), ("note", "таблицу orders_tmp можно удалять")],
+            &[
+                ("port", "5432"),
+                ("user", "orders_app"),
+                ("password", "*"),
+                ("note", "таблицу orders_tmp можно удалять"),
+            ],
             &[],
         ),
         entry(

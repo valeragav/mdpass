@@ -1,3 +1,4 @@
+mod backups;
 #[cfg(desktop)]
 mod clipboard;
 mod commands;
@@ -67,6 +68,11 @@ pub fn run() {
             commands::touch,
             commands::change_passphrase,
             settings::update_settings,
+            backups::list_backups,
+            backups::preview_backup,
+            backups::restore_backup,
+            backups::restore_damaged_vault,
+            backups::export_backup,
             entries::entries,
             entries::reveal_field,
             entries::copy_field,

@@ -41,6 +41,7 @@ export type CommandError =
   | { kind: "entryNotFound" }
   | { kind: "clipboard"; message: string }
   | { kind: "invalid"; message: string }
+  | { kind: "otherPassphrase" }
   | { kind: "io"; message: string };
 
 export interface FieldView {
@@ -73,6 +74,19 @@ export interface DraftInput {
   fields: FieldInput[];
 }
 
+export type BackupKind = "add" | "update" | "delete" | "passphrase" | "restore" | "import";
+
+export interface BackupView {
+  id: string;
+  createdMs: number;
+  kind: BackupKind;
+}
+
+export type BackupChange =
+  | { kind: "added"; title: string }
+  | { kind: "removed"; title: string }
+  | { kind: "changed"; title: string; keys: string[] };
+
 export function isCommandError(err: unknown): err is CommandError {
   return typeof err === "object" && err !== null && "kind" in err;
 }
@@ -103,6 +117,8 @@ export function errorText(err: unknown): string {
       return `Не удалось скопировать: ${err.message}`;
     case "invalid":
       return err.message;
+    case "otherPassphrase":
+      return "Копия зашифрована прежним мастер-паролем: она сделана до его смены";
     case "io":
       return `Ошибка доступа к файлу: ${err.message}`;
   }
@@ -120,6 +136,18 @@ export const api = {
   changePassphrase: (current: string, next: string) =>
     invoke<void>("change_passphrase", { current, new: next }),
   updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
+  /// `path` — для файла, который не открывается; иначе копии открытого хранилища.
+  listBackups: (path?: string) => invoke<BackupView[]>("list_backups", { path }),
+  previewBackup: (id: string) => invoke<BackupChange[]>("preview_backup", { id }),
+  restoreBackup: (id: string) => invoke<void>("restore_backup", { id }),
+  restoreDamagedVault: (path: string, id: string, passphrase: string) =>
+    invoke<void>("restore_damaged_vault", { path, id, passphrase }),
+  async exportBackup(id: string, path?: string): Promise<boolean> {
+    const to = await save({ defaultPath: id, filters: VAULT_FILTERS, title: "Сохранить копию как файл" });
+    if (!to) return false;
+    await invoke<void>("export_backup", { path, id, to });
+    return true;
+  },
   entries: () => invoke<EntryView[]>("entries"),
   revealField: (entryId: number, field: number) => invoke<string>("reveal_field", { entryId, field }),
   copyField: (entryId: number, field: number) => invoke<void>("copy_field", { entryId, field }),

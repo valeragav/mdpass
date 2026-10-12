@@ -3,12 +3,14 @@
 //! Значения секретных полей в список записей не попадают. Интерфейс получает их
 //! только по явному действию: «показать» или «скопировать».
 
+use mdpass_core::backup::BackupKind;
 use mdpass_core::format::{Document, Entry, EntryDraft, EntryId, Field, FormatError};
 use mdpass_core::password;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use zeroize::Zeroizing;
 
+use crate::backups::no_backup;
 use crate::commands::{CommandError, run_blocking};
 use crate::session::{AppState, Session};
 
@@ -141,12 +143,18 @@ impl From<FormatError> for CommandError {
 /// в памяти возвращается к прежнему виду, чтобы он не расходился с файлом.
 fn edit<T>(
     session: &mut Session,
+    kind: BackupKind,
     change: impl FnOnce(&mut Document) -> Result<T, FormatError>,
 ) -> Result<T, CommandError> {
+    let policy = session.backup_policy();
     let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
     let before = vault.document().clone();
     let result = change(vault.document_mut())?;
-    if let Err(err) = vault.save() {
+    let saved = match &policy {
+        Some(policy) => vault.save_with_backup(policy.hook(kind)),
+        None => vault.save_with_backup(no_backup),
+    };
+    if let Err(err) = saved {
         *vault.document_mut() = before;
         return Err(err.into());
     }
@@ -158,7 +166,7 @@ pub async fn add_entry(state: State<'_, AppState>, draft: DraftInput) -> Result<
     let state = state.inner().clone();
     run_blocking(move || {
         let mut session = state.lock();
-        edit(&mut session, |doc| doc.add(draft.into_draft(None))).map(EntryId::get)
+        edit(&mut session, BackupKind::Add, |doc| doc.add(draft.into_draft(None))).map(EntryId::get)
     })
     .await
 }
@@ -169,7 +177,7 @@ pub async fn update_entry(state: State<'_, AppState>, entry_id: u64, draft: Draf
     run_blocking(move || {
         let mut session = state.lock();
         let id = EntryId::from_raw(entry_id);
-        edit(&mut session, |doc| {
+        edit(&mut session, BackupKind::Update, |doc| {
             let current = doc.entry(id).ok_or(FormatError::NotFound)?;
             doc.update(id, draft.into_draft(Some(&current)))
         })
@@ -182,7 +190,7 @@ pub async fn delete_entry(state: State<'_, AppState>, entry_id: u64) -> Result<(
     let state = state.inner().clone();
     run_blocking(move || {
         let mut session = state.lock();
-        edit(&mut session, |doc| doc.remove(EntryId::from_raw(entry_id)))
+        edit(&mut session, BackupKind::Delete, |doc| doc.remove(EntryId::from_raw(entry_id)))
     })
     .await
 }

@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use age::secrecy::ExposeSecret;
+use mdpass_core::backup::BackupKind;
 use mdpass_core::vault::{Passphrase, Vault, VaultError, VaultOptions};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -35,6 +36,8 @@ pub enum CommandError {
     Clipboard {
         message: String,
     },
+    /// Резервная копия зашифрована другим мастер-паролем: сделана до его смены.
+    OtherPassphrase,
     /// Данные записи не прошли проверку. В `message` — текст для пользователя.
     Invalid {
         message: String,
@@ -58,7 +61,7 @@ impl From<VaultError> for CommandError {
     }
 }
 
-fn millis(duration: std::time::Duration) -> u64 {
+pub(crate) fn millis(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
 }
 
@@ -198,8 +201,16 @@ pub async fn change_passphrase(state: State<'_, AppState>, current: String, new:
             });
         }
         session.limiter.succeeded();
+        let policy = session.backup_policy();
         let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
-        vault.change_passphrase(new, VaultOptions::default())?;
+        match &policy {
+            Some(policy) => vault.change_passphrase_with_backup(
+                new,
+                VaultOptions::default(),
+                policy.hook(BackupKind::Passphrase),
+            )?,
+            None => vault.change_passphrase(new, VaultOptions::default())?,
+        }
         Ok(())
     })
     .await
