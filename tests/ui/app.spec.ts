@@ -125,8 +125,13 @@ test("стрелки ходят по списку и полям, Ctrl+C копи
   await expect(server).toContainClass("on");
   await page.keyboard.press("ArrowLeft");
   await expect(server).toHaveAttribute("aria-expanded", "false");
+  // → на разделе раскрывает его и переводит курсор в его список справа.
   await page.keyboard.press("ArrowRight");
   await expect(server).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".title.cursor")).toHaveText("alpha (инфра)");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".field.cursor")).toContainText("deploy@203.0.113.10");
+  await page.keyboard.press("ArrowLeft");
 
   // С первой строки ↑ уходит в поиск, ↓ из поиска — обратно в список.
   await page.keyboard.press("Home");

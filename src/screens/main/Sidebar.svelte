@@ -108,8 +108,8 @@
     keyNav.field = 0;
   }
 
-  // ↑ ↓ — по строкам, → — раскрыть раздел или перейти к полям записи, ← — свернуть раздел
-  // или подняться к разделу, Enter — то же, что щелчок.
+  // ↑ ↓ — по строкам, → или Enter — перейти вправо: к полям записи или в список раздела,
+  // ← — свернуть раздел или подняться к разделу.
   function onKey(event: KeyboardEvent) {
     if (keyNav.zone !== "list" || !isNavKey(event) || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (shown.length === 0) return;
@@ -141,21 +141,20 @@
         select(shown[shown.length - 1]);
         break;
       case "ArrowRight":
+      case "Enter":
         if (!row) select(shown[0]);
-        else if (row.kind === "entry") openFields();
-        else if (!open) toggle(row);
-        else select(shown[at + 1]);
+        else {
+          // У раздела — в его список справа; свёрнутый заодно раскрывается.
+          if (row.kind === "group" && !open) toggle(row);
+          openFields();
+        }
         break;
       case "ArrowLeft":
         if (!row) return;
         if (row.kind === "group" && open && !filtering) toggle(row);
         else select(parent());
         break;
-      case "Enter":
-        if (!row) return;
-        // У раздела справа его подразделы и записи: Enter переводит курсор туда.
-        openFields();
-        break;
+
       default:
         return;
     }
