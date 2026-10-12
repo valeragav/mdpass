@@ -7,7 +7,7 @@
 # work
 ## server
 **vps1 (инфра)**
-ssh: deploy@203.0.113.10
+ssh: root@127.0.0.7
 password: ••••••••
 tags: [work], [prod]
 ```
