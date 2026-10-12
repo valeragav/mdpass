@@ -1,7 +1,75 @@
-# Tauri + Vanilla TS
+# mdpass
 
-This template should help get you started developing with Tauri in vanilla HTML, CSS and Typescript.
+Менеджер паролей, в котором все записи лежат в одном Markdown-файле, зашифрованном
+мастер-паролем. Внутри файла обычный текст:
 
-## Recommended IDE Setup
+```markdown
+# work
+## server
+### vps1 (инфра)
+ssh: deploy@203.0.113.10
+password: ••••••••
+tags: [work], [prod]
+```
 
-- [VS Code](https://code.visualstudio.com/) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)
+Файл зашифрован форматом [age](https://age-encryption.org) с паролем (scrypt). Его можно
+расшифровать и без mdpass: `age -d vault.md.age`.
+
+## Что умеет
+
+- Разделы и записи, поиск по названию и тегам, фильтр по тегу.
+- Секреты скрыты. Значение приходит в интерфейс, только когда его показывают или копируют.
+- Копирование без записи в журнал буфера обмена. Буфер очищается через 30 секунд.
+- Генератор паролей без похожих символов.
+- Автоблокировка по бездействию и при сворачивании окна.
+- Резервная копия перед каждой записью, восстановление с просмотром изменений.
+- Восстановление повреждённого файла из копии.
+- Импорт открытого `.md` с автоисправлениями.
+- Тёмная и светлая тема, выбор акцента и размера текста.
+
+## Устройство
+
+| Папка | Что внутри |
+|---|---|
+| `crates/mdpass-core` | Формат, шифрование, копии, импорт. Без Tauri, с тестами |
+| `src-tauri` | Команды Tauri, сессия, таймер блокировки, буфер обмена |
+| `src` | Интерфейс на Svelte 5 + TypeScript |
+
+## Разработка
+
+Нужны Rust (stable), Node.js 22 и [зависимости Tauri](https://tauri.app/start/prerequisites/)
+для вашей системы.
+
+```sh
+npm install
+npm run tauri dev            # приложение с горячей перезагрузкой
+npm run dev                  # только интерфейс в браузере, команды Rust заменяет заглушка
+cargo test --workspace       # тесты
+npm run build                # проверка типов и сборка интерфейса
+```
+
+В режиме `npm run dev` верный мастер-пароль — `password1`. Все данные в заглушке выдуманные.
+
+Демо-хранилище, чтобы попробовать приложение:
+
+```sh
+cargo run -p mdpass-core --example demo_vault -- ./demo.md.age "demo-pass-123"
+```
+
+## Сборка установщиков
+
+```sh
+npm run tauri build
+```
+
+Для Windows, macOS и Linux установщики собирает GitHub Actions (`.github/workflows/release.yml`),
+когда в репозиторий пушат тег вида `v0.1.0`. Результат — черновик релиза с файлами.
+
+Android и iOS — следующий этап: интерфейс и ядро к ним готовы, нужны `npm run tauri android init`
+и `ios init` и буфер обмена через плагин Tauri.
+
+## Где лежат данные
+
+- Хранилище — там, где вы его создали, по умолчанию `~/Documents/vault.md.age`.
+- Резервные копии — рядом, в скрытой папке `.vault.md.age.backups/`, тоже зашифрованы.
+- Настройки — в папке настроек приложения (`com.mdpass.app`), без секретов.
