@@ -8,6 +8,7 @@
     "build": "svelte-check && vite build",
     "check": "svelte-check",
     "test:ui": "playwright test",
+    "demo:gif": "playwright test -c docs/demo/playwright.config.ts && node docs/demo/make-gif.mjs",
     "preview": "vite preview",
     "tauri": "tauri"
   },
