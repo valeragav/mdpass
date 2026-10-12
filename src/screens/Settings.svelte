@@ -1,7 +1,7 @@
 <script lang="ts" module>
   // Вкладка запоминается, пока приложение открыто: после резервных копий
   // «Настройки» возвращают туда же.
-  let lastTab: "security" | "file" | "look" = "security";
+  let lastTab: "security" | "file" | "look" | "keys" = "security";
 
   /// Вариант в группе кнопок-переключателей.
   export interface Choice {
@@ -21,14 +21,16 @@
   import Icon from "../lib/ui/Icon.svelte";
   import Logo from "../lib/ui/Logo.svelte";
   import { PROTECTION_LABEL } from "../lib/ui/ProtectionPicker.svelte";
+  import { IS_MAC, keyLabel, SHORTCUTS } from "../lib/shortcuts";
   import ChangeProtection from "./settings/ChangeProtection.svelte";
   import RenameVault from "./settings/RenameVault.svelte";
 
-  type Tab = "security" | "file" | "look";
+  type Tab = "security" | "file" | "look" | "keys";
   const TABS: [Tab, string][] = [
     ["security", "Безопасность"],
     ["file", "Файл и копии"],
     ["look", "Внешний вид"],
+    ["keys", "Горячие клавиши"],
   ];
 
   // Варианты взяты с экрана настроек в дизайне.
@@ -220,6 +222,32 @@
           <div>
             <Button icon="generate" onclick={openBackups}>Открыть резервные копии</Button>
           </div>
+        {:else if tab === "keys"}
+          <h1>Горячие клавиши</h1>
+          <p class="hint">
+            {IS_MAC ? "⌘ — клавиша Cmd, ⌥ — Option." : "На macOS вместо Ctrl — Cmd."} Работают и в русской раскладке.
+            Стрелки не срабатывают, пока курсор в поле ввода.
+          </p>
+          {#each SHORTCUTS as group (group.title)}
+            <section class="keys" aria-label={group.title}>
+              <h2>{group.title}</h2>
+              <dl>
+                {#each group.items as item (item.what)}
+                  <div class="key-row">
+                    <dt>
+                      {#each item.keys as combo, i (combo)}
+                        {#if i > 0}<span class="or">или</span>{/if}
+                        {#each keyLabel(combo).split("+") as k, j (j)}
+                          {#if j > 0}<span class="plus">+</span>{/if}<kbd>{k}</kbd>
+                        {/each}
+                      {/each}
+                    </dt>
+                    <dd>{item.what}</dd>
+                  </div>
+                {/each}
+              </dl>
+            </section>
+          {/each}
         {:else}
           <h1>Внешний вид</h1>
           <div class="row stacked">
@@ -448,6 +476,76 @@
     color: var(--text-muted);
     overflow: hidden;
     white-space: nowrap;
+  }
+
+  .keys {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+
+  dl {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  .key-row {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    align-items: center;
+    gap: 16px;
+    min-height: 44px;
+    padding: 6px 16px;
+    background: var(--bg-panel);
+  }
+
+  dt {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+  }
+
+  dd {
+    color: var(--text-2);
+  }
+
+  kbd {
+    min-width: 26px;
+    height: 26px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 7px;
+    border-radius: 6px;
+    border: 1px solid var(--line-strong);
+    border-bottom-width: 2px;
+    background: var(--bg-chrome);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  .or {
+    margin: 0 4px;
+    font-size: 12px;
+    color: var(--text-subtle);
+  }
+
+  .plus {
+    font-size: 12px;
+    color: var(--text-faint);
   }
 
   .swatches {

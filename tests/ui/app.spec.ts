@@ -280,6 +280,18 @@ test("слабому шифрованию хватает пароля из 4 с�
   await expect(page.getByRole("button", { name: "Создать хранилище" })).toBeDisabled();
 });
 
+test("в настройках есть все горячие клавиши", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Горячие клавиши" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Горячие клавиши" })).toBeVisible();
+  for (const group of ["Главное окно", "Список записей слева", "Запись и список раздела справа", "Редактор записи"]) {
+    await expect(page.getByRole("region", { name: group })).toBeVisible();
+  }
+  const copy = page.getByRole("region", { name: "Запись и список раздела справа" }).locator(".key-row", { hasText: "Скопировать поле" });
+  await expect(copy.locator("kbd")).toHaveText(["Ctrl", "C", "Enter"]);
+});
+
 test("настройки: защита файла и резервные копии", async ({ page }) => {
   await unlock(page);
   await page.getByRole("button", { name: "Настройки" }).click();
