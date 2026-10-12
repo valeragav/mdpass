@@ -33,6 +33,10 @@ pub enum CommandError {
     Clipboard {
         message: String,
     },
+    /// Данные записи не прошли проверку. В `message` — текст для пользователя.
+    Invalid {
+        message: String,
+    },
     Io {
         message: String,
     },
@@ -161,7 +165,7 @@ pub fn lock(state: State<'_, AppState>) {
 }
 
 /// Шифрование занимает около секунды: уводим его из потока, который обслуживает окно.
-async fn run_blocking<T: Send + 'static>(
+pub(crate) async fn run_blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, CommandError> + Send + 'static,
 ) -> Result<T, CommandError> {
     tauri::async_runtime::spawn_blocking(work)

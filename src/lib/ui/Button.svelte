@@ -9,6 +9,8 @@
     full?: boolean;
     type?: "button" | "submit";
     disabled?: boolean;
+    /// Фокус на кнопке при открытии диалога.
+    autofocus?: boolean;
     onclick?: () => void;
     children: Snippet;
   }
@@ -20,12 +22,14 @@
     full = false,
     type = "button",
     disabled = false,
+    autofocus = false,
     onclick,
     children,
   }: Props = $props();
 </script>
 
-<button class="btn {variant} {size}" class:full {type} {disabled} {onclick}>
+<!-- svelte-ignore a11y_autofocus -->
+<button class="btn {variant} {size}" class:full {type} {disabled} {autofocus} {onclick}>
   {#if icon}
     <Icon name={icon} stroke={variant === "primary" ? 2 : 1.75} />
   {/if}

@@ -27,6 +27,10 @@ pub fn run() {
             entries::entries,
             entries::reveal_field,
             entries::copy_field,
+            entries::add_entry,
+            entries::update_entry,
+            entries::delete_entry,
+            entries::generate_password,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

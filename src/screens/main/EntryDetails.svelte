@@ -2,7 +2,9 @@
   import { api, errorText, type EntryView } from "../../lib/api";
   import { app, go } from "../../lib/nav.svelte";
   import { showToast } from "../../lib/toast.svelte";
+  import { previewLines } from "../../lib/entryText";
   import Button from "../../lib/ui/Button.svelte";
+  import MarkdownPreview from "../../lib/ui/MarkdownPreview.svelte";
   import IconButton from "../../lib/ui/IconButton.svelte";
   import { isNote, revealKey, toggleReveal, vault } from "../../lib/vault.svelte";
 
@@ -47,25 +49,14 @@
   }
 
   // Так запись выглядит в файле. Секреты скрыты, пока их не показали.
-  let lines = $derived.by(() => {
-    const out: { prefix: string; key: string; value: string; tone: "muted" | "title" | "plain" }[] = [];
-    entry.path.forEach((part, i) => out.push({ prefix: "#".repeat(i + 1) + " ", key: "", value: part, tone: "muted" }));
-    out.push({ prefix: "#".repeat(Math.max(3, entry.path.length + 1)) + " ", key: "", value: entry.title, tone: "title" });
-    const tagsLine = entry.tags.length ? entry.tags.map((t) => `[${t}]`).join(", ") : null;
-    let tagsDone = false;
-    entry.fields.forEach((field, index) => {
-      if (tagsLine && !tagsDone && field.key.toLowerCase() === "note") {
-        out.push({ prefix: "", key: "tags:", value: " " + tagsLine, tone: "plain" });
-        tagsDone = true;
-      }
-      const value = shownValue(index) ?? "••••••••";
-      const [first, ...rest] = value.split("\n");
-      out.push({ prefix: "", key: field.key + ":", value: first ? " " + first : "", tone: "plain" });
-      for (const line of rest) out.push({ prefix: "  ", key: "", value: line, tone: "plain" });
-    });
-    if (tagsLine && !tagsDone) out.push({ prefix: "", key: "tags:", value: " " + tagsLine, tone: "plain" });
-    return out;
-  });
+  let lines = $derived(
+    previewLines({
+      path: entry.path,
+      title: entry.title,
+      tags: entry.tags,
+      fields: entry.fields.map((field, index) => ({ key: field.key, value: shownValue(index) })),
+    }),
+  );
 
   let fileName = $derived(app.vault?.name.replace(/\.age$/, "") ?? "vault.md");
 </script>
@@ -153,18 +144,7 @@
             <span>{fileName} · фрагмент</span>
             <span>секреты скрыты, пока вы их не покажете</span>
           </div>
-          <div class="md-body mono">
-            {#each lines as line, i (i)}
-              <div class="line">
-                <span class="n">{i + 1}</span>
-                <span class="text"
-                  ><span class="prefix">{line.prefix}</span><span class="k">{line.key}</span><span class="v {line.tone}"
-                    >{line.value}</span
-                  ></span
-                >
-              </div>
-            {/each}
-          </div>
+          <MarkdownPreview {lines} />
         </div>
       {/if}
     </div>
@@ -356,43 +336,4 @@
     color: var(--text-subtle);
   }
 
-  .md-body {
-    padding: 16px 18px;
-  }
-
-  .line {
-    display: flex;
-    gap: 16px;
-    font-size: 13px;
-    line-height: 22px;
-  }
-
-  .n {
-    width: 20px;
-    flex: none;
-    text-align: right;
-    color: var(--text-ghost);
-    user-select: none;
-  }
-
-  .text {
-    white-space: pre-wrap;
-    word-break: break-all;
-  }
-
-  .prefix {
-    color: var(--text-faint);
-  }
-
-  .k {
-    color: var(--accent);
-  }
-
-  .v.muted {
-    color: var(--text-subtle);
-  }
-
-  .v.title {
-    color: var(--accent);
-  }
 </style>

@@ -39,6 +39,28 @@ const ENTRIES = [
   ] },
 ];
 
+let nextId = 100;
+
+interface Draft {
+  path: string[];
+  title: string;
+  tags: string[];
+  fields: { key: string; value: string | null; secret: boolean; keepFrom: number | null }[];
+}
+
+function applyDraft(draft: Draft, current?: (typeof ENTRIES)[number]) {
+  return {
+    path: draft.path,
+    title: draft.title,
+    tags: draft.tags,
+    fields: draft.fields.map((f) => ({
+      key: f.key,
+      value: f.value ?? (f.keepFrom !== null ? (current?.fields[f.keepFrom]?.value ?? "") : ""),
+      secret: f.secret,
+    })),
+  };
+}
+
 let unlocked = false;
 let lastVault: string | null = `${HOME}/Documents/vault.md.age`;
 let retryUntil = 0;
@@ -78,6 +100,26 @@ mockIPC((cmd, args) => {
       if (value === undefined) throw { kind: "entryNotFound" };
       return cmd === "reveal_field" ? value : null;
     }
+    case "add_entry": {
+      const id = nextId++;
+      ENTRIES.push({ id, ...applyDraft((args as { draft: Draft }).draft) });
+      return id;
+    }
+    case "update_entry": {
+      const n = args as { entryId: number; draft: Draft };
+      const i = ENTRIES.findIndex((e) => e.id === n.entryId);
+      if (i < 0) throw { kind: "entryNotFound" };
+      ENTRIES[i] = { id: n.entryId, ...applyDraft(n.draft, ENTRIES[i]) };
+      return null;
+    }
+    case "delete_entry": {
+      const i = ENTRIES.findIndex((e) => e.id === (args as { entryId: number }).entryId);
+      if (i < 0) throw { kind: "entryNotFound" };
+      ENTRIES.splice(i, 1);
+      return null;
+    }
+    case "generate_password":
+      return Array.from(crypto.getRandomValues(new Uint8Array(20)), (b) => "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*-_"[b % 65]).join("");
     case "lock":
       unlocked = false;
       return null;

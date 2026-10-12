@@ -3,6 +3,8 @@
   import { api } from "./lib/api";
   import { app, go } from "./lib/nav.svelte";
   import Toast from "./lib/ui/Toast.svelte";
+  import { vault } from "./lib/vault.svelte";
+  import EntryEditor from "./screens/EntryEditor.svelte";
   import FileError from "./screens/FileError.svelte";
   import Main from "./screens/Main.svelte";
   import Placeholder from "./screens/Placeholder.svelte";
@@ -29,6 +31,12 @@
   <FileError />
 {:else if app.screen === "main"}
   <Main />
+{:else if app.screen === "new-entry"}
+  <EntryEditor entry={null} />
+{:else if app.screen === "edit-entry"}
+  {#key vault.selectedId}
+    <EntryEditor entry={vault.entries.find((e) => e.id === vault.selectedId) ?? null} />
+  {/key}
 {:else}
   <Placeholder screen={app.screen} />
 {/if}

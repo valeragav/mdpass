@@ -4,4 +4,5 @@
 pub mod config;
 pub mod format;
 mod fs_atomic;
+pub mod password;
 pub mod vault;

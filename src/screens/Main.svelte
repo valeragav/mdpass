@@ -5,8 +5,9 @@
   import { plural } from "../lib/text";
   import AppShell from "../lib/ui/AppShell.svelte";
   import Button from "../lib/ui/Button.svelte";
+  import ConfirmDialog from "../lib/ui/ConfirmDialog.svelte";
   import Icon from "../lib/ui/Icon.svelte";
-  import { loadEntries, matches, vault } from "../lib/vault.svelte";
+  import { deleteEntry, loadEntries, matches, vault } from "../lib/vault.svelte";
   import EntryDetails from "./main/EntryDetails.svelte";
   import Sidebar from "./main/Sidebar.svelte";
 
@@ -32,8 +33,16 @@
       : `${visible.length} из ${entriesWord(vault.entries.length)}`,
   );
 
-  function confirmDelete() {
-    // Диалог удаления появится на этапе 5.
+  let askDelete = $state(false);
+
+  async function confirmDelete() {
+    askDelete = false;
+    if (!selected) return;
+    try {
+      await deleteEntry(selected.id, selected.title);
+    } catch (err) {
+      error = errorText(err);
+    }
   }
 </script>
 
@@ -69,12 +78,28 @@
     </div>
   {:else if selected}
     {#key selected.id}
-      <EntryDetails entry={selected} ondelete={confirmDelete} />
+      <EntryDetails entry={selected} ondelete={() => (askDelete = true)} />
     {/key}
   {:else}
     <div class="center"><p class="muted">Выберите запись слева</p></div>
   {/if}
 </AppShell>
+
+{#if selected}
+  <ConfirmDialog
+    open={askDelete}
+    title={`Удалить «${selected.title}»?`}
+    icon="trash"
+    tone="danger"
+    oncancel={() => (askDelete = false)}
+  >
+    Запись исчезнет из {app.vault?.name.replace(/\.age$/, "")}.
+    {#snippet actions()}
+      <Button autofocus onclick={() => (askDelete = false)}>Отмена</Button>
+      <Button variant="danger" icon="trash" onclick={confirmDelete}>Удалить</Button>
+    {/snippet}
+  </ConfirmDialog>
+{/if}
 
 <style>
   .center {

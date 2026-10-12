@@ -2,6 +2,7 @@
 // «показать» и стираются при блокировке.
 import { api, type EntryView } from "./api";
 import { go } from "./nav.svelte";
+import { showToast } from "./toast.svelte";
 
 interface VaultState {
   entries: EntryView[];
@@ -28,6 +29,13 @@ export async function toggleReveal(entryId: number, field: number) {
   } else {
     vault.revealed[key] = await api.revealField(entryId, field);
   }
+}
+
+export async function deleteEntry(entryId: number, title: string) {
+  await api.deleteEntry(entryId);
+  for (const key of Object.keys(vault.revealed)) if (key.startsWith(`${entryId}:`)) delete vault.revealed[key];
+  await loadEntries();
+  showToast(`Запись «${title}» удалена`);
 }
 
 export async function lockVault() {

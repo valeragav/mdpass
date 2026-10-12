@@ -3,12 +3,13 @@
 //! Значения секретных полей в список записей не попадают. Интерфейс получает их
 //! только по явному действию: «показать» или «скопировать».
 
-use mdpass_core::format::{Entry, EntryId};
-use serde::Serialize;
+use mdpass_core::format::{Document, Entry, EntryDraft, EntryId, Field, FormatError};
+use mdpass_core::password;
+use serde::{Deserialize, Serialize};
 use tauri::State;
 use zeroize::Zeroizing;
 
-use crate::commands::CommandError;
+use crate::commands::{CommandError, run_blocking};
 use crate::session::{AppState, Session};
 
 #[derive(Debug, Serialize)]
@@ -84,4 +85,107 @@ pub fn copy_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> Re
             message: "буфер обмена на телефоне пока не поддерживается".into()
         })
     }
+}
+
+/// Запись из формы редактирования.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DraftInput {
+    path: Vec<String>,
+    title: String,
+    tags: Vec<String>,
+    fields: Vec<FieldInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FieldInput {
+    key: String,
+    value: Option<String>,
+    secret: bool,
+    /// Номер поля в текущей записи, значение которого нужно оставить. Так форма
+    /// сохраняет нетронутые секреты, не получая их значений.
+    keep_from: Option<usize>,
+}
+
+impl DraftInput {
+    fn into_draft(self, current: Option<&Entry>) -> EntryDraft {
+        let fields = self
+            .fields
+            .into_iter()
+            .map(|input| {
+                let kept = input
+                    .keep_from
+                    .and_then(|i| current.and_then(|entry| entry.fields.get(i)))
+                    .map(|field| field.value.clone());
+                let value = input.value.or(kept).unwrap_or_default();
+                Field { key: input.key, value, secret: input.secret }
+            })
+            .collect();
+        EntryDraft { path: self.path, title: self.title, fields, tags: self.tags }
+    }
+}
+
+impl From<FormatError> for CommandError {
+    fn from(err: FormatError) -> Self {
+        match err {
+            FormatError::NotFound => Self::EntryNotFound,
+            other => Self::Invalid { message: other.to_string() },
+        }
+    }
+}
+
+/// Меняет документ и сразу записывает файл. Если запись не удалась, документ
+/// в памяти возвращается к прежнему виду, чтобы он не расходился с файлом.
+fn edit<T>(
+    session: &mut Session,
+    change: impl FnOnce(&mut Document) -> Result<T, FormatError>,
+) -> Result<T, CommandError> {
+    let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
+    let before = vault.document().clone();
+    let result = change(vault.document_mut())?;
+    if let Err(err) = vault.save() {
+        *vault.document_mut() = before;
+        return Err(err.into());
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn add_entry(state: State<'_, AppState>, draft: DraftInput) -> Result<u64, CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        edit(&mut session, |doc| doc.add(draft.into_draft(None))).map(EntryId::get)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn update_entry(state: State<'_, AppState>, entry_id: u64, draft: DraftInput) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        let id = EntryId::from_raw(entry_id);
+        edit(&mut session, |doc| {
+            let current = doc.entry(id).ok_or(FormatError::NotFound)?;
+            doc.update(id, draft.into_draft(Some(&current)))
+        })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn delete_entry(state: State<'_, AppState>, entry_id: u64) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        edit(&mut session, |doc| doc.remove(EntryId::from_raw(entry_id)))
+    })
+    .await
+}
+
+#[tauri::command]
+pub fn generate_password(length: Option<usize>) -> String {
+    password::generate(length.unwrap_or(password::DEFAULT_LENGTH)).as_str().to_owned()
 }
