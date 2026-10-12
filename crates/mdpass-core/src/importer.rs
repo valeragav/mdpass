@@ -9,7 +9,9 @@
 //! Старые файлы записывали записи заголовком: `### vps1`. Перед разбором такие
 //! заголовки превращаются в жирное название `**vps1**`.
 
-use crate::format::{Document, Entry, EntryDraft, EntryId, Field, FormatError, content, entry_title_of, heading_of};
+use crate::format::{
+    Document, Entry, EntryDraft, EntryId, Field, FormatError, content, entry_title_of, heading_of, is_valid_key,
+};
 
 /// Переписывает заголовки-записи старого вида в жирные названия. Заголовок
 /// считается записью, если в нём нет вложенных заголовков и жирных записей —
@@ -197,6 +199,37 @@ fn apply(doc: &mut Document, kind: IssueKind, id: EntryId) -> Result<(), FormatE
     }
 }
 
+/// Запись, которую можно добавить в другое хранилище. В исходном файле бывает то,
+/// что разбор прощает, а добавление записи нет: раздел без названия, ключ вроде `#x`,
+/// скобки внутри тега. Такое не теряется, а переезжает в заметку записи.
+fn portable_draft(entry: &Entry) -> EntryDraft {
+    let mut loose: Vec<String> = entry.extra.iter().map(|line| line.trim().to_string()).collect();
+    let mut fields = Vec::new();
+    for field in &entry.fields {
+        if is_valid_key(field.key.trim()) {
+            fields.push(field.clone());
+        } else {
+            loose.push(format!("{}: {}", field.key, field.value.replace('\n', " ")));
+        }
+    }
+    let loose: Vec<String> = loose.into_iter().filter(|line| !line.is_empty()).collect();
+    if !loose.is_empty() {
+        let loose = loose.join("\n");
+        match fields.iter_mut().find(|f| f.key.eq_ignore_ascii_case("note")) {
+            Some(note) => note.value = format!("{}\n{loose}", note.value),
+            None => fields.push(Field::new("note", loose)),
+        }
+    }
+    let path = entry.path.iter().map(|part| part.trim().to_string()).filter(|part| !part.is_empty()).collect();
+    let tags = entry
+        .tags
+        .iter()
+        .map(|tag| tag.chars().filter(|c| !matches!(c, ',' | '[' | ']')).collect::<String>())
+        .filter(|tag| !tag.trim().is_empty())
+        .collect();
+    EntryDraft { path, title: entry.title.clone(), fields, tags }
+}
+
 fn draft_of(entry: &Entry) -> EntryDraft {
     EntryDraft {
         path: entry.path.clone(),
@@ -245,15 +278,7 @@ pub fn merge_into(target: &mut Document, imported: &Document) -> Result<usize, F
     }
     let mut work = target.clone();
     for entry in &entries {
-        let mut draft = draft_of(entry);
-        if !entry.extra.is_empty() {
-            let loose = entry.extra.iter().map(|line| line.trim()).collect::<Vec<_>>().join("\n");
-            match draft.fields.iter_mut().find(|f| f.key.eq_ignore_ascii_case("note")) {
-                Some(note) => note.value = format!("{}\n{loose}", note.value),
-                None => draft.fields.push(Field::new("note", loose)),
-            }
-        }
-        work.add(draft)?;
+        work.add(portable_draft(entry))?;
     }
     *target = work;
     Ok(entries.len())

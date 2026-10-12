@@ -322,3 +322,14 @@ fn format_header_is_read_and_added_once() {
     assert_eq!(old.to_markdown(), "<!-- mdpass:1 -->\n\n**a**\nk: v\n");
     assert_eq!(old.entries().len(), 1);
 }
+
+// Найдено стресс-тестом: строка без ключа с отступом приклеивалась к последнему полю.
+#[test]
+fn indented_line_without_a_key_does_not_join_a_field_after_an_edit() {
+    let mut doc = Document::parse("**a**\n  свободная строка\n");
+    let id = doc.entries()[0].id;
+    doc.update(id, draft(&[], "a", vec![field("password", "p")], &[])).unwrap();
+    let reread = Document::parse(&doc.to_markdown());
+    assert_eq!(reread.entries()[0].fields, vec![field("password", "p")]);
+    assert_eq!(reread.entries()[0].extra, ["  свободная строка"]);
+}

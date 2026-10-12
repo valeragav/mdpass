@@ -791,6 +791,14 @@ fn render_entry(entry: &EntryNode, eol: &str, out: &mut String) {
     out.push_str("**");
     out.push_str(eol);
 
+    // Строка без ключа с отступом после поля прочиталась бы как продолжение его
+    // значения. Поэтому такие строки идут до полей, а остальные — после.
+    let indented = |line: &&String| line.starts_with([' ', '\t']);
+    for line in entry.extra.iter().filter(indented) {
+        out.push_str(line);
+        out.push_str(eol);
+    }
+
     // Теги пишутся перед заметкой, если она есть, иначе в конце полей.
     let tags_at = entry.fields.iter().position(|f| f.key.eq_ignore_ascii_case("note")).unwrap_or(entry.fields.len());
     for (i, field) in entry.fields.iter().enumerate() {
@@ -803,7 +811,7 @@ fn render_entry(entry: &EntryNode, eol: &str, out: &mut String) {
         render_tags(&entry.tags, eol, out);
     }
 
-    for line in &entry.extra {
+    for line in entry.extra.iter().filter(|line| !indented(line)) {
         out.push_str(line);
         out.push_str(eol);
     }
@@ -840,6 +848,16 @@ fn render_tags(tags: &[String], eol: &str, out: &mut String) {
     out.push_str(": ");
     out.push_str(&list.join(", "));
     out.push_str(eol);
+}
+
+/// Можно ли записать поле с таким ключом так, чтобы оно прочиталось обратно полем.
+pub fn is_valid_key(key: &str) -> bool {
+    !key.is_empty()
+        && !key.contains(|c: char| c.is_whitespace() || c == ':')
+        && !key.ends_with(SECRET_MARKER)
+        && !key.starts_with('#')
+        && !key.starts_with('*')
+        && !key.eq_ignore_ascii_case(TAGS_KEY)
 }
 
 /// Проверяет путь к разделу и убирает пробелы по краям названий.
@@ -886,13 +904,7 @@ fn normalize(draft: EntryDraft) -> Result<EntryDraft, FormatError> {
     let mut fields = Vec::with_capacity(draft.fields.len());
     for field in draft.fields {
         let key = field.key.trim();
-        let valid = !key.is_empty()
-            && !key.contains(|c: char| c.is_whitespace() || c == ':')
-            && !key.ends_with(SECRET_MARKER)
-            && !key.starts_with('#')
-            && !key.starts_with('*')
-            && !key.eq_ignore_ascii_case(TAGS_KEY);
-        if !valid {
+        if !is_valid_key(key) {
             return Err(FormatError::InvalidKey(key.to_string()));
         }
         // Пустые строки внутри значения не сохраняются: в файле они закончили бы поле.

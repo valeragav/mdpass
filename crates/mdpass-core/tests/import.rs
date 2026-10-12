@@ -139,3 +139,24 @@ fn import_into_a_filled_vault_appends_entries_and_keeps_loose_lines_as_a_note() 
     let pochta = entries.iter().find(|e| e.title == "почта").unwrap();
     assert!(pochta.fields.iter().any(|f| f.key == "note" && f.value == "строка без ключа"));
 }
+
+// Найдено стресс-тестом: раздел без названия или ключ вроде «#x» роняли весь импорт.
+#[test]
+fn odd_sections_keys_and_tags_do_not_stop_an_import() {
+    let result = analyze("# \n### a\n#x: значение\ntags: [ok], [b]ad]\nlogin: l\n", Fixes::default()).result;
+    let mut vault = Document::default();
+    vault
+        .add(EntryDraft {
+            path: vec!["work".into()],
+            title: "есть".into(),
+            fields: vec![Field::new("k", "v")],
+            tags: vec![],
+        })
+        .unwrap();
+    assert_eq!(merge_into(&mut vault, &result).unwrap(), 1);
+    let a = vault.entries().into_iter().find(|e| e.title == "a").unwrap();
+    assert!(a.path.is_empty());
+    assert!(a.fields.iter().any(|f| f.key == "login"));
+    assert!(a.fields.iter().any(|f| f.key == "note" && f.value.contains("#x: значение")));
+    assert!(a.tags.iter().all(|t| !t.contains(']')));
+}

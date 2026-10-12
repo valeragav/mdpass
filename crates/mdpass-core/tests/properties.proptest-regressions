@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2a7e85fde64e972b86affac45312268a17e7783d3ade1cc9f21ee9bf641e4d9f # shrinks to start = "**а**\n**a**\n  a", ops = [Update { pick: 2548034306042045461, title: "а", value: "" }, Add { path: [], title: "a", value: "" }]
+cc 434f25965be0701dc60b8b087e1b05bf6dac3e5e299a574d585d9e1580cbcc87 # shrinks to text = "# \n# a\na", fixes = [false, false, false, false]
