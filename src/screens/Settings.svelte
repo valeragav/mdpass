@@ -2,6 +2,14 @@
   // Вкладка запоминается, пока приложение открыто: после резервных копий
   // «Настройки» возвращают туда же.
   let lastTab: "security" | "file" | "look" = "security";
+
+  /// Вариант в группе кнопок-переключателей.
+  export interface Choice {
+    key: string;
+    label: string;
+    on: boolean;
+    pick: () => void;
+  }
 </script>
 
 <script lang="ts">
@@ -66,13 +74,6 @@
     } catch (err) {
       showToast(errorText(err));
     }
-  }
-
-  interface Choice {
-    key: string;
-    label: string;
-    on: boolean;
-    pick: () => void;
   }
 
   /// Варианты для группы кнопок-переключателей.
