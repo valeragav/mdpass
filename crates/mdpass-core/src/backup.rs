@@ -1,9 +1,13 @@
 //! Резервные копии хранилища.
 //!
 //! Перед каждой записью файл в том виде, в каком он лежал на диске, копируется
-//! в скрытую папку рядом: `.vault.md.age.backups/`. Копия зашифрована тем же
-//! мастер-паролем, что и файл в момент копирования. В имени копии только время
-//! и вид действия, названий записей там нет.
+//! в папку приложения: `<папка копий>/vault.md.age-<хеш пути>/`. Хеш полного пути
+//! не даёт смешаться копиям одноимённых хранилищ из разных папок. Копия защищена
+//! так же, как файл в момент копирования. В имени копии только время и вид
+//! действия, названий записей там нет.
+//!
+//! Раньше копии лежали рядом с хранилищем, в `.vault.md.age.backups/`. Такие
+//! папки забираются в папку приложения при первом обращении.
 
 use std::fs;
 use std::io;
@@ -65,6 +69,13 @@ pub struct BackupStore {
 }
 
 impl BackupStore {
+    /// Копии в папке приложения `root`: своя подпапка у каждого хранилища.
+    pub fn in_root(root: &Path, vault_path: &Path) -> Self {
+        let name = vault_path.file_name().map_or_else(|| "vault".into(), |n| n.to_string_lossy().into_owned());
+        Self { dir: root.join(format!("{name}-{}", path_key(vault_path))) }
+    }
+
+    /// Старое место копий: скрытая папка рядом с хранилищем.
     pub fn for_vault(vault_path: &Path) -> Self {
         let name = vault_path.file_name().map_or_else(|| "vault".into(), |n| n.to_string_lossy().into_owned());
         let parent = vault_path.parent().unwrap_or(Path::new("."));
@@ -117,14 +128,10 @@ impl BackupStore {
         fs::copy(self.path_of(id)?, to).map(drop)
     }
 
-    /// Переносит копии к хранилищу с новым именем файла. Если у нового имени
-    /// уже есть своя папка копий, ничего не трогает.
-    pub fn move_to(&self, vault_path: &Path) -> io::Result<Self> {
-        let target = Self::for_vault(vault_path);
-        if self.dir.exists() && !target.dir.exists() {
-            fs::rename(&self.dir, &target.dir)?;
-        }
-        Ok(target)
+    /// Переносит копии в другую папку копий, например когда файл хранилища
+    /// переименовали. Копии, которые там уже есть, не перезаписываются.
+    pub fn move_to(&self, target: &Self) -> io::Result<()> {
+        move_dir(&self.dir, &target.dir)
     }
 
     /// Удаляет старые копии, оставляя `keep` самых новых.
@@ -168,6 +175,42 @@ pub fn restore_damaged(
         Some(passphrase) => Vault::open(vault_path, passphrase),
         None => Vault::open_plain(vault_path),
     }
+}
+
+/// Короткий устойчивый отпечаток пути: FNV-1a от полного пути. На Windows регистр
+/// букв в пути не важен, поэтому путь приводится к нижнему регистру.
+fn path_key(path: &Path) -> String {
+    let text = path.to_string_lossy();
+    let text = if cfg!(windows) { text.to_lowercase().replace('/', "\\") } else { text.into_owned() };
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in text.bytes() {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{:08x}", hash >> 32)
+}
+
+/// Переносит папку целиком. Если переименовать нельзя (другой диск или папка
+/// уже есть), файлы копируются по одному, существующие не перезаписываются.
+fn move_dir(from: &Path, to: &Path) -> io::Result<()> {
+    if !from.is_dir() || from == to {
+        return Ok(());
+    }
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    if !to.exists() && fs::rename(from, to).is_ok() {
+        return Ok(());
+    }
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_file() && !target.exists() {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    fs::remove_dir_all(from)
 }
 
 /// `20261012T114203123Z-update.age` или с суффиксом `…-update-1.age`.

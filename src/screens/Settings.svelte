@@ -52,6 +52,19 @@
   ];
 
   let tab = $state<Tab>(lastTab);
+  let backupsDir = $state<string | null>(null);
+  $effect(() => {
+    if (tab === "file" && backupsDir === null) api.backupsLocation().then((dir) => (backupsDir = dir), () => {});
+  });
+
+  async function showBackups() {
+    if (!backupsDir) return;
+    try {
+      await revealItemInDir(backupsDir);
+    } catch (err) {
+      showToast(errorText(err));
+    }
+  }
   $effect(() => {
     lastTab = tab;
   });
@@ -190,6 +203,16 @@
               choices(KEEP, app.settings.backupsToKeep, String, (o) => update({ backupsToKeep: o })),
               "Сколько копий хранить",
             )}
+          </div>
+          <div class="row stacked">
+            <div>
+              <div class="name">Где лежат копии</div>
+              <div class="hint">В папке приложения, отдельно от файла хранилища</div>
+            </div>
+            <div class="file-row">
+              <div class="file mono"><Icon name="file" /><span>{backupsDir ?? "…"}</span></div>
+              <Button size="sm" disabled={!backupsDir} onclick={showBackups}>Показать в папке</Button>
+            </div>
           </div>
           <div>
             <Button icon="generate" onclick={openBackups}>Открыть резервные копии</Button>

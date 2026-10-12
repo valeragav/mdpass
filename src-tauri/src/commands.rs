@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use age::secrecy::ExposeSecret;
-use mdpass_core::backup::{BackupKind, BackupStore};
+use mdpass_core::backup::BackupKind;
 use mdpass_core::vault::{Passphrase, Vault, VaultError, VaultOptions};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State};
@@ -309,7 +309,7 @@ pub async fn change_protection<R: Runtime>(
         let old_path = vault.path().to_path_buf();
         let wanted = vault.conventional_path();
         if wanted != old_path && vault.rename_to(&wanted).is_ok() {
-            if let Err(err) = BackupStore::for_vault(&old_path).move_to(&wanted) {
+            if let Err(err) = session.backup_store(&old_path).move_to(&session.backup_store(&wanted)) {
                 eprintln!("не удалось перенести резервные копии: {err}");
             }
             session.config.last_vault = Some(wanted);

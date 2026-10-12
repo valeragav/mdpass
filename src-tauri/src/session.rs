@@ -17,6 +17,8 @@ pub struct Session {
     pub limiter: AttemptLimiter,
     pub config: AppConfig,
     config_path: PathBuf,
+    /// Папка резервных копий в папке данных приложения.
+    pub backups_root: PathBuf,
     /// Последнее действие пользователя. От него считается автоблокировка.
     last_activity: Instant,
     /// Открытый файл, который импортировали последним: только его можно удалить.
@@ -24,12 +26,13 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn new(config_path: PathBuf) -> Self {
+    pub fn new(config_path: PathBuf, backups_root: PathBuf) -> Self {
         Self {
             vault: None,
             limiter: AttemptLimiter::new(RETRY_DELAY),
             config: AppConfig::load(&config_path),
             config_path,
+            backups_root,
             last_activity: Instant::now(),
             last_import: None,
         }
@@ -92,7 +95,7 @@ mod tests {
     use super::*;
 
     fn unlocked_session(dir: &tempfile::TempDir) -> Session {
-        let mut session = Session::new(dir.path().join("config.json"));
+        let mut session = Session::new(dir.path().join("config.json"), dir.path().join("backups"));
         let vault = Vault::create(
             &dir.path().join("v.md.age"),
             Passphrase::from("p".to_string()),

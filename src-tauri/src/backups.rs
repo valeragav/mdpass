@@ -31,6 +31,16 @@ impl BackupPolicy {
 }
 
 impl Session {
+    /// Папка копий хранилища в папке приложения. Копии, которые раньше лежали
+    /// рядом с хранилищем, переезжают туда при первом обращении.
+    pub fn backup_store(&self, vault_path: &Path) -> BackupStore {
+        let store = BackupStore::in_root(&self.backups_root, vault_path);
+        if let Err(err) = BackupStore::for_vault(vault_path).move_to(&store) {
+            eprintln!("не удалось перенести старые резервные копии: {err}");
+        }
+        store
+    }
+
     /// Правило копий для открытого хранилища. `None`, если копии выключены в настройках.
     pub fn backup_policy(&self) -> Option<BackupPolicy> {
         let vault = self.vault.as_ref()?;
@@ -40,7 +50,7 @@ impl Session {
     /// Копия перед восстановлением делается всегда: так восстановление можно отменить.
     fn policy_for(&self, path: &Path) -> BackupPolicy {
         BackupPolicy {
-            store: BackupStore::for_vault(path),
+            store: self.backup_store(path),
             keep: usize::try_from(self.config.backups_to_keep).unwrap_or(usize::MAX).max(1),
         }
     }
@@ -79,8 +89,8 @@ impl From<Change> for ChangeView {
 
 fn store_for(session: &Session, path: Option<String>) -> Result<BackupStore, CommandError> {
     match path {
-        Some(path) => Ok(BackupStore::for_vault(Path::new(&path))),
-        None => session.vault.as_ref().map(|v| BackupStore::for_vault(v.path())).ok_or(CommandError::Locked),
+        Some(path) => Ok(session.backup_store(Path::new(&path))),
+        None => session.vault.as_ref().map(|v| session.backup_store(v.path())).ok_or(CommandError::Locked),
     }
 }
 
@@ -113,7 +123,7 @@ pub async fn preview_backup(state: State<'_, AppState>, id: String) -> Result<Ve
     run_blocking(move || {
         let session = state.lock();
         let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
-        let bytes = BackupStore::for_vault(vault.path()).read(&id).map_err(io_error)?;
+        let bytes = session.backup_store(vault.path()).read(&id).map_err(io_error)?;
         let backup = vault.decrypt_backup(&bytes).map_err(other_passphrase)?;
         Ok(diff(vault.document(), &backup).into_iter().map(ChangeView::from).collect())
     })
@@ -160,7 +170,7 @@ pub async fn restore_damaged_vault(
             return Err(CommandError::TooSoon { retry_in_ms: crate::commands::millis(wait) });
         }
         let path = PathBuf::from(path);
-        let store = BackupStore::for_vault(&path);
+        let store = session.backup_store(&path);
         match restore_damaged(&path, &store, &id, passphrase, SystemTime::now()) {
             Ok(vault) => {
                 session.limiter.succeeded();
@@ -190,4 +200,12 @@ pub fn export_backup(
 ) -> Result<(), CommandError> {
     let store = store_for(&state.lock(), path)?;
     store.export(&id, Path::new(&to)).map_err(io_error)
+}
+
+/// Где лежат копии открытого хранилища: для строки в настройках.
+#[tauri::command]
+pub fn backups_location(state: State<'_, AppState>) -> Result<String, CommandError> {
+    let session = state.lock();
+    let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
+    Ok(session.backup_store(vault.path()).dir().to_string_lossy().into_owned())
 }

@@ -171,6 +171,8 @@ export const api = {
   updateSettings: (settings: Settings) => invoke<Settings>("update_settings", { settings }),
   /// `path` — для файла, который не открывается; иначе копии открытого хранилища.
   listBackups: (path?: string) => invoke<BackupView[]>("list_backups", { path }),
+  /// Папка копий открытого хранилища в папке приложения.
+  backupsLocation: () => invoke<string>("backups_location"),
   previewBackup: (id: string) => invoke<BackupChange[]>("preview_backup", { id }),
   restoreBackup: (id: string) => invoke<void>("restore_backup", { id }),
   restoreDamagedVault: (path: string, id: string, passphrase: string | null) =>

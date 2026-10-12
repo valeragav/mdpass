@@ -43,7 +43,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let config_path = app.path().app_config_dir()?.join("config.json");
-            app.manage(AppState::new(Session::new(config_path)));
+            // Копии лежат в локальной папке приложения: им не нужно синхронизироваться
+            // между компьютерами, и они не засоряют папку с хранилищем.
+            let backups_root = app.path().app_local_data_dir()?.join("backups");
+            app.manage(AppState::new(Session::new(config_path, backups_root)));
             watch_idle(app.handle().clone());
             Ok(())
         })
@@ -74,6 +77,7 @@ pub fn run() {
             backups::restore_backup,
             backups::restore_damaged_vault,
             backups::export_backup,
+            backups::backups_location,
             importing::analyze_import,
             importing::run_import,
             importing::delete_import_source,

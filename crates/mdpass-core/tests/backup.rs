@@ -238,10 +238,39 @@ fn damaged_open_vault_is_restored_without_a_passphrase() {
 #[test]
 fn backups_follow_a_renamed_vault() {
     let dir = TempDir::new().unwrap();
-    let old = BackupStore::for_vault(&dir.path().join("vault.md"));
+    let root = dir.path().join("app-backups");
+    let old = BackupStore::in_root(&root, &dir.path().join("vault.md"));
     old.save(b"a", BackupKind::Update, at(0)).unwrap();
-    let moved = old.move_to(&dir.path().join("vault.md.age")).unwrap();
-    assert_eq!(moved.dir(), dir.path().join(".vault.md.age.backups"));
+    let moved = BackupStore::in_root(&root, &dir.path().join("vault.md.age"));
+    old.move_to(&moved).unwrap();
     assert_eq!(moved.list().unwrap().len(), 1);
     assert!(!old.dir().exists());
+}
+
+#[test]
+fn app_folder_keeps_vaults_with_the_same_name_apart() {
+    let dir = TempDir::new().unwrap();
+    let root = dir.path().join("app-backups");
+    let a = BackupStore::in_root(&root, &dir.path().join("one").join("vault.md.age"));
+    let b = BackupStore::in_root(&root, &dir.path().join("two").join("vault.md.age"));
+    assert_ne!(a.dir(), b.dir());
+    assert!(a.dir().starts_with(&root));
+    assert!(a.dir().file_name().unwrap().to_string_lossy().starts_with("vault.md.age-"));
+    assert_eq!(a.dir(), BackupStore::in_root(&root, &dir.path().join("one").join("vault.md.age")).dir());
+}
+
+#[test]
+fn copies_next_to_the_vault_move_into_the_app_folder() {
+    let dir = TempDir::new().unwrap();
+    let vault = dir.path().join("vault.md.age");
+    let legacy = BackupStore::for_vault(&vault);
+    legacy.save(b"old", BackupKind::Update, at(0)).unwrap();
+    let app = BackupStore::in_root(&dir.path().join("app-backups"), &vault);
+    app.save(b"new", BackupKind::Add, at(60)).unwrap();
+
+    legacy.move_to(&app).unwrap();
+    assert!(!legacy.dir().exists());
+    let list = app.list().unwrap();
+    assert_eq!(list.len(), 2);
+    assert_eq!(app.read(&list[1].id).unwrap(), b"old");
 }
