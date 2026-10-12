@@ -7,16 +7,30 @@ import { showToast } from "./toast.svelte";
 interface VaultState {
   entries: EntryView[];
   selectedId: number | null;
+  /// Раздел, на который нажали в списке. Новая запись создаётся в нём.
+  /// `null` — берётся раздел выбранной записи.
+  selectedSection: string[] | null;
   /// Показанные значения секретов: ключ `${entryId}:${индекс поля}`.
   revealed: Record<string, string>;
 }
 
-export const vault = $state<VaultState>({ entries: [], selectedId: null, revealed: {} });
+export const vault = $state<VaultState>({ entries: [], selectedId: null, selectedSection: null, revealed: {} });
+
+/// Раздел для новой записи: выбранный в списке или раздел выбранной записи.
+export function currentSection(): string[] {
+  if (vault.selectedSection) return vault.selectedSection;
+  const entry = vault.entries.find((e) => e.id === vault.selectedId) ?? vault.entries.at(-1);
+  return entry?.path ?? [];
+}
 
 export const revealKey = (entryId: number, field: number) => `${entryId}:${field}`;
 
 export async function loadEntries() {
   vault.entries = await api.entries();
+  const section = vault.selectedSection;
+  if (section && !vault.entries.some((e) => section.every((part, i) => e.path[i] === part))) {
+    vault.selectedSection = null;
+  }
   if (!vault.entries.some((e) => e.id === vault.selectedId)) {
     vault.selectedId = vault.entries[0]?.id ?? null;
   }
@@ -43,6 +57,7 @@ export function forgetEntries() {
   vault.entries = [];
   vault.revealed = {};
   vault.selectedId = null;
+  vault.selectedSection = null;
   go("unlock");
 }
 

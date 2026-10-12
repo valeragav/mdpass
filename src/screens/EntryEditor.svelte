@@ -9,7 +9,7 @@
   import Icon from "../lib/ui/Icon.svelte";
   import IconButton from "../lib/ui/IconButton.svelte";
   import Logo from "../lib/ui/Logo.svelte";
-  import { deleteEntry, loadEntries, vault } from "../lib/vault.svelte";
+  import { currentSection, deleteEntry, loadEntries, vault } from "../lib/vault.svelte";
 
   /// Запись, которую правим. `null` — новая запись.
   let { entry: entryProp }: { entry: EntryView | null } = $props();
@@ -49,9 +49,8 @@
 
   const initial = (() => {
     if (!entry) {
-      // Новая запись по умолчанию попадает в раздел выбранной записи.
-      const near = vault.entries.find((e) => e.id === vault.selectedId) ?? vault.entries.at(-1);
-      return { path: near?.path.join(" / ") ?? "", title: "", tags: "", note: "", template: "server" };
+      // Новая запись попадает в раздел, выбранный в списке, или в раздел выбранной записи.
+      return { path: currentSection().join(" / "), title: "", tags: "", note: "", template: "server" };
     }
     return {
       path: entry.path.join(" / "),

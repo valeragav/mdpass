@@ -270,11 +270,16 @@
           type="button"
           class="group mono {dropClass(row.key)}"
           class:faded={isDragged(row)}
+          class:on={vault.selectedSection !== null && pathKey(vault.selectedSection) === pathKey(row.path)}
           data-drop={row.key}
           aria-expanded={open}
           style:padding-left="{6 + row.depth * 16}px"
           onpointerdown={(e) => startPress(e, { kind: "section", path: row.path }, row.label)}
-          onclick={() => !suppressClick && toggle(row)}
+          onclick={() => {
+            if (suppressClick) return;
+            vault.selectedSection = row.path;
+            toggle(row);
+          }}
         >
           <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
           <span class="label">{row.label}</span>
@@ -289,7 +294,11 @@
           aria-current={row.entry.id === vault.selectedId ? "true" : undefined}
           style:padding-left="{24 + row.depth * 16}px"
           onpointerdown={(e) => startPress(e, { kind: "entry", entry: row.entry }, row.entry.title)}
-          onclick={() => !suppressClick && (vault.selectedId = row.entry.id)}
+          onclick={() => {
+            if (suppressClick) return;
+            vault.selectedId = row.entry.id;
+            vault.selectedSection = null;
+          }}
         >
           <span class="title">{row.entry.title}</span>
           <span class="hint mono">{entryHint(row.entry)}</span>
@@ -419,6 +428,11 @@
 
   .group:hover {
     background: var(--bg-hover);
+  }
+
+  /* Выбранный раздел: в нём создастся новая запись. */
+  .group.on {
+    color: var(--accent);
   }
 
   .chevron {
