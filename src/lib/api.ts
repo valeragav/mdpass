@@ -23,7 +23,25 @@ export type CommandError =
   | { kind: "alreadyExists" }
   | { kind: "emptyPassphrase" }
   | { kind: "changedOnDisk" }
+  | { kind: "locked" }
+  | { kind: "entryNotFound" }
+  | { kind: "clipboard"; message: string }
   | { kind: "io"; message: string };
+
+export interface FieldView {
+  key: string;
+  /// У секретного поля значения нет: его нужно запросить отдельно.
+  value: string | null;
+  secret: boolean;
+}
+
+export interface EntryView {
+  id: number;
+  path: string[];
+  title: string;
+  tags: string[];
+  fields: FieldView[];
+}
 
 export function isCommandError(err: unknown): err is CommandError {
   return typeof err === "object" && err !== null && "kind" in err;
@@ -47,6 +65,12 @@ export function errorText(err: unknown): string {
       return "Мастер-пароль не может быть пустым";
     case "changedOnDisk":
       return "Файл изменён вне приложения";
+    case "locked":
+      return "Хранилище заблокировано";
+    case "entryNotFound":
+      return "Запись не найдена";
+    case "clipboard":
+      return `Не удалось скопировать: ${err.message}`;
     case "io":
       return `Ошибка доступа к файлу: ${err.message}`;
   }
@@ -60,6 +84,9 @@ export const api = {
   createVault: (path: string, passphrase: string) => invoke<void>("create_vault", { path, passphrase }),
   unlock: (path: string, passphrase: string) => invoke<void>("unlock", { path, passphrase }),
   lock: () => invoke<void>("lock"),
+  entries: () => invoke<EntryView[]>("entries"),
+  revealField: (entryId: number, field: number) => invoke<string>("reveal_field", { entryId, field }),
+  copyField: (entryId: number, field: number) => invoke<void>("copy_field", { entryId, field }),
 
   /// Диалог выбора места для нового хранилища.
   async pickNewVault(defaultPath?: string): Promise<VaultFile | null> {

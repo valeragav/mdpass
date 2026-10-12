@@ -2,7 +2,9 @@
   import { onMount } from "svelte";
   import { api } from "./lib/api";
   import { app, go } from "./lib/nav.svelte";
+  import Toast from "./lib/ui/Toast.svelte";
   import FileError from "./screens/FileError.svelte";
+  import Main from "./screens/Main.svelte";
   import Placeholder from "./screens/Placeholder.svelte";
   import Unlock from "./screens/Unlock.svelte";
   import Welcome from "./screens/Welcome.svelte";
@@ -25,6 +27,10 @@
   <Unlock />
 {:else if app.screen === "file-error"}
   <FileError />
+{:else if app.screen === "main"}
+  <Main />
 {:else}
   <Placeholder screen={app.screen} />
 {/if}
+
+<Toast />

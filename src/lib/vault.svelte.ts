@@ -1,0 +1,63 @@
+// Записи открытого хранилища. Секретные значения здесь появляются только после
+// «показать» и стираются при блокировке.
+import { api, type EntryView } from "./api";
+import { go } from "./nav.svelte";
+
+interface VaultState {
+  entries: EntryView[];
+  selectedId: number | null;
+  /// Показанные значения секретов: ключ `${entryId}:${индекс поля}`.
+  revealed: Record<string, string>;
+}
+
+export const vault = $state<VaultState>({ entries: [], selectedId: null, revealed: {} });
+
+export const revealKey = (entryId: number, field: number) => `${entryId}:${field}`;
+
+export async function loadEntries() {
+  vault.entries = await api.entries();
+  if (!vault.entries.some((e) => e.id === vault.selectedId)) {
+    vault.selectedId = vault.entries[0]?.id ?? null;
+  }
+}
+
+export async function toggleReveal(entryId: number, field: number) {
+  const key = revealKey(entryId, field);
+  if (key in vault.revealed) {
+    delete vault.revealed[key];
+  } else {
+    vault.revealed[key] = await api.revealField(entryId, field);
+  }
+}
+
+export async function lockVault() {
+  await api.lock();
+  vault.entries = [];
+  vault.revealed = {};
+  vault.selectedId = null;
+  go("unlock");
+}
+
+/// Поля-заметки показываются отдельно от остальных полей.
+export const isNote = (key: string) => /^note\d*$/i.test(key);
+
+/// Подсказка в списке записей: ключ первого обычного поля, например «ssh» или «url».
+export function entryHint(entry: EntryView): string {
+  return entry.fields.find((f) => !f.secret && !isNote(f.key))?.key ?? "";
+}
+
+/// Подходит ли запись под поиск и тег. Секретные значения в поиске не участвуют.
+export function matches(entry: EntryView, query: string, tag: string): boolean {
+  if (tag && !entry.tags.includes(tag)) return false;
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    entry.path.join(" "),
+    entry.title,
+    entry.tags.join(" "),
+    ...entry.fields.filter((f) => !f.secret).map((f) => `${f.key} ${f.value ?? ""}`),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
+}

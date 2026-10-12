@@ -18,7 +18,7 @@
     <p class="mono">Открыто: {app.vault?.display}</p>
     <Button icon="lock" onclick={lock}>Заблокировать</Button>
   {:else}
-    <Button icon="back" onclick={() => go(app.vault ? "unlock" : "welcome")}>Назад</Button>
+    <Button icon="back" onclick={() => go(app.vault ? "main" : "welcome")}>Назад</Button>
   {/if}
 </div>
 

@@ -14,14 +14,28 @@ const DEFAULT_FILE_NAME: &str = "vault.md.age";
 #[derive(Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum CommandError {
-    WrongPassphrase { retry_in_ms: u64 },
-    TooSoon { retry_in_ms: u64 },
-    Damaged { detail: String },
+    WrongPassphrase {
+        retry_in_ms: u64,
+    },
+    TooSoon {
+        retry_in_ms: u64,
+    },
+    Damaged {
+        detail: String,
+    },
     NotFound,
     AlreadyExists,
     EmptyPassphrase,
     ChangedOnDisk,
-    Io { message: String },
+    /// Хранилище заблокировано: команде нужны открытые записи.
+    Locked,
+    EntryNotFound,
+    Clipboard {
+        message: String,
+    },
+    Io {
+        message: String,
+    },
 }
 
 impl From<VaultError> for CommandError {
@@ -142,6 +156,8 @@ pub async fn unlock(state: State<'_, AppState>, path: String, passphrase: String
 #[tauri::command]
 pub fn lock(state: State<'_, AppState>) {
     state.lock().vault = None;
+    #[cfg(desktop)]
+    crate::clipboard::clear_ours();
 }
 
 /// Шифрование занимает около секунды: уводим его из потока, который обслуживает окно.

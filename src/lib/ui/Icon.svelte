@@ -18,6 +18,13 @@
       '<path d="M20 11a8 8 0 00-14.5-4.5L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0014.5 4.5L20 16"/><path d="M20 20v-4h-4"/>',
     warning: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/>',
     error: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/>',
+    settings:
+      '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+    copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 012-2h9"/>',
+    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+    trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+    "lock-memory": '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11h8"/><path d="M8 11V7a4 4 0 017.5-2"/>',
+    document: '<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
   } as const;
 
   export type IconName = keyof typeof PATHS;

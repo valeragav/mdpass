@@ -1,4 +1,7 @@
+#[cfg(desktop)]
+mod clipboard;
 mod commands;
+mod entries;
 mod session;
 
 use tauri::Manager;
@@ -9,7 +12,6 @@ use crate::session::{AppState, Session};
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let config_path = app.path().app_config_dir()?.join("config.json");
@@ -22,6 +24,9 @@ pub fn run() {
             commands::create_vault,
             commands::unlock,
             commands::lock,
+            entries::entries,
+            entries::reveal_field,
+            entries::copy_field,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

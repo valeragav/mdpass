@@ -13,11 +13,3 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
-
-# scrypt без оптимизаций в отладочной сборке работает в десятки раз медленнее:
-# открытие хранилища в `tauri dev` и тесты стали бы долгими.
-[profile.dev.package.scrypt]
-opt-level = 3
-
-[profile.dev.package.sha2]
-opt-level = 3
