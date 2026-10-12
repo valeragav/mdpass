@@ -1,18 +1,79 @@
+# Выпуск по тегу v*: проверка версии и описание → установщики для всех систем → черновик
+# выпуска на GitHub.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Версия в теге должна совпадать с package.json, Cargo.toml и src-tauri/tauri.conf.json,
+# а в CHANGELOG.md должен быть раздел «## 0.1.0 — …»: его текст становится описанием выпуска.
+
 name: Release
 
-# Установщики собираются, когда в репозиторий пушат тег вида v0.1.0.
-# Результат — черновик релиза на GitHub с файлами для всех платформ.
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
+  notes:
+    name: Версия и описание
+    runs-on: ubuntu-latest
+    outputs:
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Версия тега = package.json, Cargo.toml, tauri.conf.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(node -p "require('./package.json').version")"
+          conf="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          cargo="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          for v in "$pkg" "$conf" "$cargo"; do
+            if [ "$tag" != "$v" ]; then
+              echo "::error::тег $GITHUB_REF_NAME, а в файлах: package.json $pkg, tauri.conf.json $conf, Cargo.toml $cargo"
+              exit 1
+            fi
+          done
+
+      - name: Описание из CHANGELOG.md
+        id: notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # раздел от «## <версия>» до следующего «## »
+          awk -v v="$version" '
+            /^## / { if (found) exit; if (index($0, "## " v " ") == 1 || $0 == "## " v) { found = 1; next } }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::в CHANGELOG.md нет раздела ## $version"
+            exit 1
+          fi
+          cat >> notes.md <<EOF
+
+          ### Установка
+
+          | Система | Файл |
+          | --- | --- |
+          | Windows | \`mdpass_${version}_x64-setup.exe\` |
+          | macOS Apple Silicon | \`mdpass_${version}_aarch64.dmg\` |
+          | macOS Intel | \`mdpass_${version}_x64.dmg\` |
+          | Linux | \`.AppImage\`, \`.deb\` или \`.rpm\` |
+
+          Установщики пока не подписаны. Windows покажет «Неизвестный издатель»: нажмите
+          «Подробнее» → «Выполнить в любом случае». В macOS откройте приложение через
+          контекстное меню → «Открыть». Подробнее — в [docs/setup.md](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/setup.md#установка).
+          EOF
+          {
+            echo "body<<NOTES_EOF"
+            cat notes.md
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
   build:
     name: Сборка (${{ matrix.name }})
+    needs: notes
     strategy:
       fail-fast: false
       matrix:
@@ -58,7 +119,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: mdpass ${{ github.ref_name }}
-          releaseBody: Установщики mdpass для Windows, macOS и Linux.
+          releaseBody: ${{ needs.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
