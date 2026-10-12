@@ -25,3 +25,7 @@ dist-ssr
 
 # Cargo workspace
 /target/
+
+# Playwright
+/test-results/
+/playwright-report/

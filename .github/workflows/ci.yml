@@ -70,3 +70,22 @@ jobs:
       # оба известных идут из Linux-зависимостей Tauri (GTK).
       - name: cargo audit
         run: cargo audit
+
+  ui:
+    name: Тесты интерфейса
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Браузер для тестов
+        run: npx playwright install --with-deps chromium
+
+      - name: Playwright
+        run: npm run test:ui

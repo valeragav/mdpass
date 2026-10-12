@@ -16,6 +16,9 @@
   let { open, title, icon = "warning", tone = "accent", oncancel, children, actions }: Props = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
+  // У каждого диалога свой id заголовка: на экране их бывает несколько сразу.
+  const uid = $props.id();
+  const titleId = `${uid}-title`;
 
   // Нативный <dialog> сам держит фокус внутри окна и закрывается по Esc.
   $effect(() => {
@@ -32,7 +35,7 @@
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
 <dialog
   bind:this={dialog}
-  aria-labelledby="confirm-title"
+  aria-labelledby={titleId}
   oncancel={(e) => {
     e.preventDefault();
     oncancel();
@@ -43,7 +46,7 @@
     <div class="head">
       <Icon name={icon} size={22} color={tone === "danger" ? "var(--danger)" : "var(--accent)"} />
       <div class="text">
-        <h2 id="confirm-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         <div class="body">{@render children()}</div>
       </div>
     </div>

@@ -53,7 +53,8 @@ tags: [work], [prod]
 npm install
 npm run tauri dev            # приложение с горячей перезагрузкой
 npm run dev                  # только интерфейс в браузере, команды Rust заменяет заглушка
-cargo test --workspace       # тесты
+cargo test --workspace       # тесты ядра и приложения, включая стресс-тесты формата
+npm run test:ui              # сценарии экранов в невидимом браузере (Playwright)
 npm run build                # проверка типов и сборка интерфейса
 ```
 
@@ -64,6 +65,8 @@ npm run build                # проверка типов и сборка ин�
 ```sh
 cargo run -p mdpass-core --example demo_vault -- ./demo.md.age "demo-pass-123"
 ```
+
+Перед выпуском — ручная проверка в настоящем окне: [docs/manual-check.md](docs/manual-check.md).
 
 ## Сборка установщиков
 

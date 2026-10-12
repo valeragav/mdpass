@@ -38,9 +38,11 @@
     for (const entry of visible) {
       entry.path.forEach((part, i) => {
         // Если раздел сменился на этом уровне, все более глубокие тоже начинаются заново.
+        // Один и тот же раздел может встретиться в файле дважды, поэтому в ключе есть
+        // номер первой записи после заголовка.
         if (last[i] !== part) {
           const path = entry.path.slice(0, i + 1);
-          out.push({ kind: "group", key: `g:${pathKey(path)}`, depth: i, label: part, path });
+          out.push({ kind: "group", key: `g:${entry.id}:${pathKey(path)}`, depth: i, label: part, path });
           last = [...last.slice(0, i), part];
         }
       });

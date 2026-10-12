@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "svelte-check && vite build",
     "check": "svelte-check",
+    "test:ui": "playwright test",
     "preview": "vite preview",
     "tauri": "tauri"
   },
@@ -18,6 +19,7 @@
     "@tauri-apps/plugin-opener": "^2"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tauri-apps/cli": "^2",
     "@tsconfig/svelte": "^5.0.8",
