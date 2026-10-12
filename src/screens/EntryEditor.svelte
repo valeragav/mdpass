@@ -155,6 +155,8 @@
       } else {
         vault.selectedId = await api.addEntry(draft());
       }
+      // После сохранения справа — сама запись, а не список раздела.
+      vault.selectedSection = null;
       await loadEntries();
       showToast(entry ? "Изменения сохранены" : "Запись добавлена");
       go("main");

@@ -9,6 +9,7 @@
   import Icon from "../lib/ui/Icon.svelte";
   import { deleteEntry, loadEntries, lockVault, matches, vault } from "../lib/vault.svelte";
   import EntryDetails from "./main/EntryDetails.svelte";
+  import SectionView from "./main/SectionView.svelte";
   import Sidebar from "./main/Sidebar.svelte";
 
   let query = $state("");
@@ -100,6 +101,9 @@
         </div>
       </div>
     </div>
+  {:else if vault.selectedSection}
+    <!-- Щелчок по разделу: все записи этого раздела без подразделов. -->
+    <SectionView path={vault.selectedSection} {visible} />
   {:else if selected}
     {#key selected.id}
       <EntryDetails entry={selected} ondelete={() => (askDelete = true)} />

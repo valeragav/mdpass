@@ -103,6 +103,10 @@
     select(shown.find(isCurrent) ?? shown[0]);
   }
 
+  function hasOwnFields(path: string[]): boolean {
+    return visible.some((e) => pathKey(e.path) === pathKey(path) && e.fields.length > 0);
+  }
+
   function openFields() {
     keyNav.zone = "fields";
     keyNav.field = 0;
@@ -153,7 +157,8 @@
         break;
       case "Enter":
         if (!row) return;
-        if (row.kind === "entry") openFields();
+        // У раздела справа список его записей: Enter переводит курсор в их поля.
+        if (row.kind === "entry" || hasOwnFields(row.path)) openFields();
         else toggle(row);
         break;
       default:
@@ -169,6 +174,18 @@
   });
 
   let empty = $derived(vault.entries.length === 0);
+
+  // Теги занимают не больше двух строк, иначе вытеснили бы список записей.
+  // Остальные раскрываются кнопкой.
+  let tagsBox: HTMLElement | undefined = $state();
+  let tagsOpen = $state(false);
+  let tagsOverflow = $state(false);
+
+  $effect(() => {
+    void tagChips.length;
+    if (!tagsBox || tagsOpen) return;
+    tagsOverflow = tagsBox.scrollHeight > tagsBox.clientHeight + 1;
+  });
 
   // ---- Перетаскивание ----------------------------------------------------
   // Сделано на событиях указателя: HTML5 drag-and-drop в окне Tauri на Windows
@@ -339,7 +356,7 @@
       />
     </div>
     {#if tagChips.length > 0}
-      <div class="tags">
+      <div class="tags" class:open={tagsOpen} bind:this={tagsBox}>
         {#each tagChips as chip (chip.name)}
           <button
             type="button"
@@ -353,6 +370,11 @@
           </button>
         {/each}
       </div>
+      {#if tagsOverflow || tagsOpen}
+        <button type="button" class="more-tags" aria-expanded={tagsOpen} onclick={() => (tagsOpen = !tagsOpen)}>
+          {tagsOpen ? "Свернуть теги" : `Все теги (${tagChips.length})`}
+        </button>
+      {/if}
     {/if}
   </div>
 
@@ -374,11 +396,15 @@
           aria-expanded={open}
           style:padding-left="{6 + row.depth * 16}px"
           onpointerdown={(e) => startPress(e, { kind: "section", path: row.path }, row.label)}
-          onclick={() => {
+          onclick={(e) => {
             if (suppressClick) return;
-            vault.selectedSection = row.path;
             keyNav.zone = "list";
-            toggle(row);
+            // Первый щелчок открывает справа записи раздела, следующий сворачивает его.
+            // Стрелка слева сворачивает сразу.
+            const onChevron = (e.target as HTMLElement).closest(".chevron") !== null;
+            if (onChevron || isCurrent(row)) toggle(row);
+            else if (!open) toggle(row);
+            vault.selectedSection = row.path;
           }}
         >
           <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
@@ -474,6 +500,28 @@
     display: flex;
     flex-wrap: wrap;
     gap: 6px;
+  }
+
+  .tags:not(.open) {
+    /* две строки чипов */
+    max-height: 62px;
+    overflow: hidden;
+  }
+
+  .tags.open {
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+
+  .more-tags {
+    align-self: flex-start;
+    margin-top: -4px;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .more-tags:hover {
+    text-decoration: underline;
   }
 
   .chip {
