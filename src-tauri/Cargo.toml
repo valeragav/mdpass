@@ -32,3 +32,7 @@ arboard = { version = "3.6", default-features = false }
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+# Под Wayland буфер обмена работает через протокол data-control, без него arboard видит только X11.
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
