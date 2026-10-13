@@ -96,10 +96,20 @@ export interface BackupView {
   kind: BackupKind;
 }
 
+/// Поле, которое вернётся к прежнему значению при восстановлении копии.
+export interface FieldChange {
+  key: string;
+  secret: boolean;
+  /// Значение в копии. `null` у секретного поля: его запрашивают отдельно.
+  before: string | null;
+  /// В копии такого поля нет: при восстановлении оно пропадёт.
+  missing: boolean;
+}
+
 export type BackupChange =
-  | { kind: "added"; title: string }
-  | { kind: "removed"; title: string }
-  | { kind: "changed"; title: string; keys: string[] };
+  | { kind: "added"; path: string[]; title: string }
+  | { kind: "removed"; path: string[]; title: string }
+  | { kind: "changed"; path: string[]; title: string; fields: FieldChange[] };
 
 export interface ImportFixes {
   legacyTags: boolean;
@@ -200,6 +210,13 @@ export const api = {
   backupsLocation: () => invoke<string>("backups_location"),
   previewBackup: (id: string) => invoke<BackupChange[]>("preview_backup", { id }),
   restoreBackup: (id: string) => call<void>("restore_backup", { id }),
+  revealBackupField: (id: string, path: string[], title: string, key: string) =>
+    invoke<string>("reveal_backup_field", { id, path, title, key }),
+  copyBackupField: (id: string, path: string[], title: string, key: string) =>
+    invoke<void>("copy_backup_field", { id, path, title, key }),
+  /// Возвращает из копии одну запись, остальные не трогает.
+  restoreBackupEntry: (id: string, path: string[], title: string) =>
+    call<number>("restore_backup_entry", { id, path, title }),
   restoreDamagedVault: (path: string, id: string, passphrase: string | null) =>
     invoke<void>("restore_damaged_vault", { path, id, passphrase }),
   async exportBackup(id: string, path?: string): Promise<boolean> {

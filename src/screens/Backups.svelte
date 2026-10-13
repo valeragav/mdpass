@@ -7,11 +7,13 @@
     type BackupChange,
     type BackupKind,
     type BackupView,
+    type FieldChange,
   } from "../lib/api";
   import { app, go } from "../lib/nav.svelte";
   import { showToast } from "../lib/toast.svelte";
   import Button from "../lib/ui/Button.svelte";
   import Icon from "../lib/ui/Icon.svelte";
+  import IconButton from "../lib/ui/IconButton.svelte";
   import Logo from "../lib/ui/Logo.svelte";
   import PasswordInput from "../lib/ui/PasswordInput.svelte";
   import { loadEntries } from "../lib/vault.svelte";
@@ -64,10 +66,14 @@
     }
   });
 
+  /// Показанные прежние значения секретов: ключ `${номер изменения}:${ключ поля}`.
+  let revealed = $state<Record<string, string>>({});
+
   let previewToken = 0;
   async function select(id: string) {
     selectedId = id;
     error = null;
+    revealed = {};
     if (damaged) return;
     // Расшифровка занимает около секунды: устаревший ответ не должен перебить новый.
     const token = ++previewToken;
@@ -94,10 +100,63 @@
       case "removed":
         return { sign: "−", tone: "removed", text: `«${change.title}» будет удалена: в этой копии её нет` };
       case "changed": {
-        const keys = change.keys.join(", ");
-        const what = change.keys.length === 1 ? `поле ${keys} вернётся` : `поля ${keys} вернутся`;
+        const keys = change.fields.map((f) => f.key).join(", ");
+        const what = change.fields.length === 1 ? `поле ${keys} вернётся` : `поля ${keys} вернутся`;
         return { sign: "~", tone: "changed", text: `«${change.title}»: ${what} к прежнему значению` };
       }
+    }
+  }
+
+  // `tags` и `favorite` — не поля, а строки записи: их показывают как есть, без «показать».
+  const isMark = (key: string) => key === "tags" || key === "favorite";
+
+  function fieldValue(change: number, field: FieldChange): string {
+    if (field.missing) return "в копии нет — пропадёт";
+    if (field.secret) return revealed[`${change}:${field.key}`] ?? "••••••••";
+    return field.before || "пусто";
+  }
+
+  async function toggleOld(i: number, change: BackupChange, field: FieldChange) {
+    const key = `${i}:${field.key}`;
+    if (key in revealed) {
+      delete revealed[key];
+      return;
+    }
+    try {
+      revealed[key] = await api.revealBackupField(selected!.id, change.path, change.title, field.key);
+    } catch (err) {
+      error = errorText(err);
+    }
+  }
+
+  async function copyOld(change: BackupChange, field: FieldChange) {
+    try {
+      await api.copyBackupField(selected!.id, change.path, change.title, field.key);
+      showToast(`Скопировано прежнее значение ${field.key}`);
+    } catch (err) {
+      error = errorText(err);
+    }
+  }
+
+  let restoringEntry = $state<string | null>(null);
+
+  /// Возвращает из копии одну запись. Перед этим, как и перед любой записью файла,
+  /// создаётся копия, поэтому список копий перечитывается.
+  async function restoreEntry(change: BackupChange) {
+    if (!selected || restoringEntry) return;
+    const id = selected.id;
+    restoringEntry = change.title;
+    error = null;
+    try {
+      await api.restoreBackupEntry(id, change.path, change.title);
+      await loadEntries();
+      showToast(`Запись «${change.title}» восстановлена из копии`);
+      backups = await api.listBackups();
+      await select(id);
+    } catch (err) {
+      error = errorText(err);
+    } finally {
+      restoringEntry = null;
     }
   }
 
@@ -215,10 +274,56 @@
                     {@const c = changeText(change)}
                     <div class="change">
                       <span class="sign mono {c.tone}">{c.sign}</span>
-                      <span>{c.text}</span>
+                      <div class="change-body">
+                        <div class="change-head">
+                          <span>{c.text}</span>
+                          {#if change.kind !== "removed"}
+                            <Button
+                              size="sm"
+                              icon="generate"
+                              disabled={restoringEntry !== null}
+                              onclick={() => restoreEntry(change)}
+                            >
+                              {restoringEntry === change.title ? "Возвращаем…" : "Вернуть запись"}
+                            </Button>
+                          {/if}
+                        </div>
+                        {#if change.kind === "changed"}
+                          <div class="old-fields">
+                            {#each change.fields as field (field.key)}
+                              <div class="old" aria-label={`Прежнее значение ${field.key}`}>
+                                <span class="old-key mono">{field.key}</span>
+                                <span class="old-value mono" class:faint={field.missing}>{fieldValue(i, field)}</span>
+                                {#if !field.missing && !isMark(field.key)}
+                                  <span class="old-actions">
+                                    {#if field.secret}
+                                      {@const shown = `${i}:${field.key}` in revealed}
+                                      <IconButton
+                                        icon={shown ? "eye-off" : "eye"}
+                                        size="sm"
+                                        label={`${shown ? "Скрыть" : "Показать"} прежний ${field.key}`}
+                                        onclick={() => toggleOld(i, change, field)}
+                                      />
+                                    {/if}
+                                    <IconButton
+                                      icon="copy"
+                                      size="sm"
+                                      label={`Скопировать прежний ${field.key}`}
+                                      onclick={() => copyOld(change, field)}
+                                    />
+                                  </span>
+                                {/if}
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
+                      </div>
                     </div>
                   {/each}
                 </div>
+                <p class="muted small">
+                  «Вернуть запись» меняет только эту запись. «Восстановить эту копию» возвращает всё хранилище целиком.
+                </p>
               {/if}
             </div>
           {/if}
@@ -408,6 +513,66 @@
     width: 20px;
     flex: none;
     font-weight: 500;
+  }
+
+  .change-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .change-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .change-head :global(.btn) {
+    flex: none;
+  }
+
+  .old-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .old {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 36px;
+    padding: 0 4px 0 12px;
+    border-radius: 6px;
+    background: var(--bg-chrome);
+  }
+
+  .old-key {
+    font-size: 12px;
+    color: var(--text-subtle);
+  }
+
+  .old-value {
+    font-size: 13px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding: 8px 0;
+  }
+
+  .old-value.faint {
+    color: var(--text-faint);
+  }
+
+  .old-actions {
+    display: flex;
+  }
+
+  .small {
+    font-size: 12px;
   }
 
   .sign.added {

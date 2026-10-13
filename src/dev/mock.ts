@@ -43,6 +43,65 @@ const ENTRIES = [
 
 let nextId = 100;
 
+// Резервные копии заглушки: какими записи были в момент копии.
+type MockEntry = (typeof ENTRIES)[number];
+const samePlace = (a: MockEntry, b: MockEntry) => a.path.join("/") === b.path.join("/") && a.title === b.title;
+const BACKUPS: Record<string, MockEntry[]> = (() => {
+  const copy = () => structuredClone(ENTRIES);
+  const withOldValues = (entries: MockEntry[]) => {
+    entries[0].fields[1].value = "Old#Pass-2025";
+    entries[2].fields[3].value = "таблицу catalog_tmp пока не трогать";
+    return entries;
+  };
+  return {
+    "20261012T084203123Z-update.age": withOldValues(copy()),
+    "20261012T071500000Z-add.age": withOldValues(copy()).filter((e) => e.title !== "example.test"),
+    "20261011T150300000Z-delete.age": [
+      ...copy(),
+      { id: 900, path: ["my"], title: "роутер", tags: [], favorite: false, favoriteOrder: null, fields: [
+        { key: "login", value: "admin", secret: false },
+        { key: "password", value: "R0uter!pass", secret: true },
+      ] },
+    ],
+  };
+})();
+
+function backupDiff(backup: MockEntry[]) {
+  const out: unknown[] = [];
+  for (const entry of ENTRIES) {
+    const old = backup.find((b) => samePlace(b, entry));
+    if (!old) {
+      out.push({ kind: "removed", path: entry.path, title: entry.title });
+      continue;
+    }
+    const value = (e: MockEntry, key: string) => e.fields.find((f) => f.key === key)?.value;
+    const keys = [...new Set([...old.fields, ...entry.fields].map((f) => f.key))].filter(
+      (key) => value(old, key) !== value(entry, key),
+    );
+    const fields = keys.map((key) => {
+      const f = old.fields.find((x) => x.key === key);
+      return f
+        ? { key, secret: f.secret, before: f.secret ? null : f.value, missing: false }
+        : { key, secret: false, before: null, missing: true };
+    });
+    if (old.tags.join() !== entry.tags.join()) {
+      fields.push({ key: "tags", secret: false, before: old.tags.map((t) => `[${t}]`).join(", "), missing: false });
+    }
+    if (fields.length) out.push({ kind: "changed", path: entry.path, title: entry.title, fields });
+  }
+  for (const old of backup) {
+    if (!ENTRIES.some((e) => samePlace(e, old))) out.push({ kind: "added", path: old.path, title: old.title });
+  }
+  return out;
+}
+
+function backupEntry(args: unknown): MockEntry {
+  const n = args as { id: string; path: string[]; title: string };
+  const entry = BACKUPS[n.id]?.find((e) => e.path.join("/") === n.path.join("/") && e.title === n.title);
+  if (!entry) throw { kind: "entryNotFound" };
+  return entry;
+}
+
 interface Draft {
   path: string[];
   title: string;
@@ -214,8 +273,27 @@ mockIPC(
     case "preview_backup": {
       const id = (args as { id: string }).id;
       if (id.includes("passphrase")) throw { kind: "otherPassphrase" };
-      if (id.includes("add")) return [{ kind: "removed", title: "example.test" }, { kind: "changed", title: "БД каталога", keys: ["note"] }];
-      return [{ kind: "changed", title: "БД каталога", keys: ["note"] }];
+      return backupDiff(BACKUPS[id] ?? []);
+    }
+    case "reveal_backup_field": {
+      const key = (args as { key: string }).key;
+      const field = backupEntry(args).fields.find((f) => f.key === key);
+      if (!field) throw { kind: "entryNotFound" };
+      return field.value;
+    }
+    case "copy_backup_field":
+      backupEntry(args);
+      return null;
+    case "restore_backup_entry": {
+      const old = structuredClone(backupEntry(args));
+      const at = ENTRIES.findIndex((e) => samePlace(e, old));
+      if (at >= 0) {
+        ENTRIES[at] = { ...old, id: ENTRIES[at].id };
+        return ENTRIES[at].id;
+      }
+      const id = nextId++;
+      ENTRIES.push({ ...old, id });
+      return id;
     }
     case "restore_backup":
       return null;

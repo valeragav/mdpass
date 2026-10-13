@@ -8,6 +8,8 @@ use std::time::{Duration, Instant};
 use mdpass_core::config::AppConfig;
 use mdpass_core::vault::{AttemptLimiter, Vault};
 
+use crate::backups::OpenBackup;
+
 /// Пауза после неверного мастер-пароля.
 pub const RETRY_DELAY: Duration = Duration::from_secs(3);
 
@@ -23,6 +25,8 @@ pub struct Session {
     last_activity: Instant,
     /// Открытый файл, который импортировали последним: только его можно удалить.
     pub last_import: Option<PathBuf>,
+    /// Копия, которую смотрят на экране резервных копий.
+    pub open_backup: Option<OpenBackup>,
 }
 
 impl Session {
@@ -35,6 +39,7 @@ impl Session {
             backups_root,
             last_activity: Instant::now(),
             last_import: None,
+            open_backup: None,
         }
     }
 
@@ -54,6 +59,7 @@ impl Session {
     /// если в нём наше значение.
     pub fn lock_vault(&mut self) {
         self.vault = None;
+        self.open_backup = None;
         #[cfg(desktop)]
         crate::clipboard::clear_ours();
     }

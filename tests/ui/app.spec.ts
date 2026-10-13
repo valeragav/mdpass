@@ -468,6 +468,53 @@ test("настройки: защита файла и резервные копи
   await expect(page.getByText("Что изменится при восстановлении")).toBeVisible();
 });
 
+test("в резервной копии видно прежний пароль, запись возвращается отдельно", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Файл и копии" }).click();
+  await page.getByRole("button", { name: "Открыть резервные копии" }).click();
+
+  const web01 = page.locator(".change", { hasText: "web-01 (прод)" });
+  const password = web01.getByLabel("Прежнее значение password");
+  await expect(password).toContainText("••••••••");
+  await expect(page.getByText("Old#Pass-2025")).toHaveCount(0);
+  await web01.getByRole("button", { name: "Показать прежний password" }).click();
+  await expect(password).toContainText("Old#Pass-2025");
+
+  // Обычное поле показывается сразу.
+  const db = page.locator(".change", { hasText: "БД каталога" });
+  await expect(db.getByLabel("Прежнее значение note")).toContainText("таблицу catalog_tmp пока не трогать");
+
+  await web01.getByRole("button", { name: "Скопировать прежний password" }).click();
+  await expect(page.getByRole("status")).toContainText("Скопировано прежнее значение password");
+
+  // «Вернуть запись» меняет только её: изменение «БД каталога» остаётся.
+  await web01.getByRole("button", { name: "Вернуть запись" }).click();
+  await expect(page.getByRole("status")).toContainText("Запись «web-01 (прод)» восстановлена из копии");
+  await expect(web01).toHaveCount(0);
+  await expect(db).toBeVisible();
+
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Назад" }).click();
+  await sidebar(page).getByRole("button", { name: /web-01/ }).click();
+  await page.getByRole("button", { name: "Показать password" }).click();
+  await expect(page.getByText("Old#Pass-2025")).toBeVisible();
+});
+
+test("из копии возвращается удалённая запись", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Файл и копии" }).click();
+  await page.getByRole("button", { name: "Открыть резервные копии" }).click();
+  await page.getByRole("button", { name: /Перед удалением записи/ }).click();
+
+  const router = page.locator(".change", { hasText: "роутер" });
+  await expect(router).toContainText("вернётся");
+  await router.getByRole("button", { name: "Вернуть запись" }).click();
+  await expect(page.getByRole("status")).toContainText("Запись «роутер» восстановлена из копии");
+  await expect(router).toHaveCount(0);
+});
+
 test("файл, изменённый вне приложения, предлагают перечитать", async ({ page }) => {
   await unlock(page);
   await page.getByRole("button", { name: "Новая запись" }).click();

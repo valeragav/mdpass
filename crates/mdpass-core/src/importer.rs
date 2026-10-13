@@ -202,7 +202,7 @@ fn apply(doc: &mut Document, kind: IssueKind, id: EntryId) -> Result<(), FormatE
 /// Запись, которую можно добавить в другое хранилище. В исходном файле бывает то,
 /// что разбор прощает, а добавление записи нет: раздел без названия, ключ вроде `#x`,
 /// скобки внутри тега. Такое не теряется, а переезжает в заметку записи.
-fn portable_draft(entry: &Entry) -> EntryDraft {
+pub(crate) fn portable_draft(entry: &Entry) -> EntryDraft {
     let mut loose: Vec<String> = entry.extra.iter().map(|line| line.trim().to_string()).collect();
     let mut fields = Vec::new();
     for field in &entry.fields {

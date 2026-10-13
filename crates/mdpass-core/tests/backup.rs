@@ -2,7 +2,7 @@ use std::fs;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use mdpass_core::backup::{BackupKind, BackupStore, restore_damaged};
-use mdpass_core::diff::{Change, diff};
+use mdpass_core::diff::{Change, diff, restore_entry};
 use mdpass_core::format::{Document, EntryDraft, Favorite, Field};
 use mdpass_core::vault::{Passphrase, Vault, VaultError, VaultOptions};
 use tempfile::TempDir;
@@ -157,9 +157,9 @@ fn diff_tells_what_restoring_would_change_without_secret_values() {
     assert_eq!(
         changes,
         vec![
-            Change::Changed { title: "alpha".into(), keys: vec!["password".into()] },
-            Change::Removed { title: "beta".into() },
-            Change::Added { title: "gamma".into() },
+            Change::Changed { path: vec!["work".into()], title: "alpha".into(), keys: vec!["password".into()] },
+            Change::Removed { path: vec!["work".into()], title: "beta".into() },
+            Change::Added { path: vec!["work".into()], title: "gamma".into() },
         ]
     );
     assert!(!format!("{changes:?}").contains("secret"));
@@ -274,4 +274,40 @@ fn copies_next_to_the_vault_move_into_the_app_folder() {
     let list = app.list().unwrap();
     assert_eq!(list.len(), 2);
     assert_eq!(app.read(&list[1].id).unwrap(), b"old");
+}
+
+#[test]
+fn restoring_one_entry_brings_back_its_old_values_and_leaves_the_rest() {
+    let mut current = Document::default();
+    current.add(draft("alpha", "new-secret")).unwrap();
+    current.add(draft("beta", "b-new")).unwrap();
+    let mut backup = Document::default();
+    backup.add(draft("alpha", "old-secret")).unwrap();
+    backup.add(draft("beta", "b-old")).unwrap();
+    backup.add(draft("gamma", "g")).unwrap();
+    let old = backup.entries();
+
+    let id = restore_entry(&mut current, &old[0]).unwrap();
+    assert_eq!(current.entry(id).unwrap().fields, old[0].fields);
+    assert_eq!(current.entries()[1].fields[1].value, "b-new");
+    assert_eq!(current.entries().len(), 2);
+
+    // Записи, которой уже нет, возвращается целиком.
+    let id = restore_entry(&mut current, &old[2]).unwrap();
+    assert_eq!(current.entry(id).unwrap().title, "gamma");
+    assert_eq!(current.entries().len(), 3);
+}
+
+#[test]
+fn restored_entry_keeps_free_lines_in_the_note() {
+    let backup = Document::parse(
+        "**alpha**
+login: a
+свободная строка
+",
+    );
+    let mut current = Document::default();
+    let id = restore_entry(&mut current, &backup.entries()[0]).unwrap();
+    let note = current.entry(id).unwrap().fields.into_iter().find(|f| f.key == "note").unwrap();
+    assert_eq!(note.value, "свободная строка");
 }

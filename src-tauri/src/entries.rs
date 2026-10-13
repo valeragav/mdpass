@@ -70,7 +70,7 @@ fn field_value(session: &Session, entry_id: u64, field: usize) -> Result<Zeroizi
 
 /// Что положить в буфер. Поле `ssh` копируется готовой командой `ssh user@host`,
 /// чтобы её сразу можно было вставить в терминал.
-fn clipboard_text(key: &str, value: Zeroizing<String>) -> Zeroizing<String> {
+pub(crate) fn clipboard_text(key: &str, value: Zeroizing<String>) -> Zeroizing<String> {
     let value_is_command = value.trim_start().starts_with("ssh ");
     if key.eq_ignore_ascii_case("ssh") && !value_is_command && !value.trim().is_empty() {
         Zeroizing::new(format!("ssh {}", value.trim()))
@@ -102,6 +102,11 @@ pub fn reveal_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> 
 pub fn copy_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> Result<(), CommandError> {
     let session = state.lock();
     let value = clipboard_text(&field_key(&session, entry_id, field)?, field_value(&session, entry_id, field)?);
+    copy_to_clipboard(&session, value)
+}
+
+/// Кладёт значение в буфер обмена и очищает его через время из настроек.
+pub(crate) fn copy_to_clipboard(session: &Session, value: Zeroizing<String>) -> Result<(), CommandError> {
     #[cfg(desktop)]
     {
         crate::clipboard::copy(value, session.clipboard_clear_after())
