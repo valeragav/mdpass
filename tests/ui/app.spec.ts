@@ -321,31 +321,43 @@ test("избранные записи показываются над разде
   await expect(favorites).toHaveCount(0);
 });
 
-test("длинное избранное свёрнуто до пяти записей", async ({ page }) => {
+test("длинное избранное прокручивается: видно 5 строк, раскрытое — 10", async ({ page }) => {
   await unlock(page);
   const favorites = page.getByRole("navigation", { name: "Избранное" });
   for (const title of [/web-02/, /БД каталога/, /example\.test/]) {
     await sidebar(page).getByRole("button", { name: title }).click();
     await page.getByRole("button", { name: "Добавить в избранное" }).click();
   }
-  await expect(favorites.getByRole("button")).toHaveCount(5);
+  // Пять избранных: стрелки у заголовка нет.
   await expect(favorites.getByRole("button", { name: /Избранное/ })).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Новая запись" }).click();
-  await page.getByLabel("Название").fill("шестая");
-  await page.getByRole("button", { name: "В избранном" }).click();
-  await page.getByRole("button", { name: "Сохранить запись" }).click();
-  await expect(page.getByRole("status")).toContainText("Запись добавлена");
+  for (let i = 1; i <= 7; i++) {
+    await page.getByRole("button", { name: "Новая запись" }).click();
+    await page.getByLabel("Название").fill(`новая-${i}`);
+    await page.getByRole("button", { name: "В избранном" }).click();
+    await page.getByRole("button", { name: "Сохранить запись" }).click();
+    await expect(page.getByRole("status")).toContainText("Запись добавлена");
+  }
 
-  const more = favorites.getByRole("button", { name: /Избранное/ });
-  await expect(more).toHaveAttribute("aria-expanded", "false");
-  await expect(more).toContainText("5 из 6");
-  await expect(favorites.getByRole("button", { name: /шестая/ })).toHaveCount(0);
+  // Двенадцать избранных, все в списке; в заголовке нет счётчика.
+  const head = favorites.getByRole("button", { name: /Избранное/ });
+  await expect(head).toHaveText("Избранное");
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  const box = favorites.locator(".fav-scroll");
+  await expect(box.getByRole("button")).toHaveCount(12);
+  expect((await box.boundingBox())!.height).toBe(150);
 
-  await more.click();
-  await expect(favorites.getByRole("button", { name: /шестая/ })).toBeVisible();
-  await more.click();
-  await expect(favorites.getByRole("button", { name: /шестая/ })).toHaveCount(0);
+  // Дальние записи — через прокрутку области избранного.
+  const last = box.getByRole("button", { name: /новая-7/ });
+  await expect(last).not.toBeInViewport();
+  await last.scrollIntoViewIfNeeded();
+  await expect(last).toBeInViewport();
+
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+  expect((await box.boundingBox())!.height).toBe(300);
+  await head.click();
+  expect((await box.boundingBox())!.height).toBe(150);
 });
 
 test("избранное переставляется перетаскиванием и Alt+стрелками", async ({ page }) => {
