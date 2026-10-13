@@ -1,7 +1,9 @@
 // Заглушка Rust-части для просмотра интерфейса в обычном браузере (`npm run dev`).
 // Подключается только в режиме разработки вне Tauri, в сборку приложения не попадает.
 // Верный пароль — «password1». Файл с «broken» в имени открывается с ошибкой целостности.
+// «work.md.age» из недавних открывается с большим набором записей.
 import { mockIPC } from "@tauri-apps/api/mocks";
+import { isSecretName } from "../lib/entryText";
 
 const HOME = "/home/demo";
 const describe = (path: string) => ({
@@ -42,6 +44,95 @@ const ENTRIES = [
 ];
 
 let nextId = 100;
+
+// Большое хранилище для ручной проверки: «work.md.age» в недавних, пароль тот же.
+// Тесты открывают vault.md.age, поэтому эти данные их не задевают.
+const BIG_VAULT = "work.md.age";
+
+function bigVault(): MockEntry[] {
+  // Пароли выдуманные, но каждый раз одни и те же.
+  let seed = 7;
+  const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!#$%&*";
+  const secret = () =>
+    Array.from({ length: 14 }, () => chars[(seed = (seed * 48271) % 2147483647) % chars.length]).join("");
+  let id = 1000;
+  const out: MockEntry[] = [];
+  const add = (path: string, title: string, tags: string[], fields: [string, string][], favorite: number | boolean = false) =>
+    out.push({
+      id: id++,
+      path: path ? path.split(" / ") : [],
+      title,
+      tags,
+      favorite: favorite !== false,
+      favoriteOrder: typeof favorite === "number" ? favorite : null,
+      fields: fields.map(([key, value]) => ({ key, value: value === "*" ? secret() : value, secret: isSecretName(key) })),
+    });
+
+  add("", "Wi-Fi дома", ["home"], [["ssid", "home-5g"], ["password", "*"]], 3);
+  add("", "Сейф в шкафу", [], [["pin", "*"], ["note", "код меняли в марте"]]);
+
+  for (const [n, ip] of [[1, "203.0.113.11"], [2, "203.0.113.12"], [3, "203.0.113.13"], [4, "203.0.113.14"]] as const) {
+    add("work / servers / prod", `web-0${n} (прод)`, ["prod", "web"], [["ssh", `deploy@${ip}`], ["password", "*"]], n === 1 ? 1 : false);
+  }
+  add("work / servers / prod", "deploy-ключ", ["ssh"], [["user", "deploy"], ["private_key", "-----BEGIN KEY-----\nAAAAexample\nBBBBexample\n-----END KEY-----"]]);
+  add("work / servers / prod", "balancer-01", ["prod", "net"], [["ssh", "root@203.0.113.2"], ["password", "*"], ["note", "перезапуск только в окно обслуживания\nпосле — проверить health-check"]]);
+  add("work / servers / prod", "очередь задач (RabbitMQ)", ["prod"], [["url", "https://mq.example.test/"], ["login", "ops"], ["password", "*"]], true);
+  for (const n of [1, 2]) {
+    add("work / servers / stage", `stage-0${n}`, ["stage", "web"], [["ssh", `deploy@198.51.100.${30 + n}`], ["password", "*"]]);
+  }
+  add("work / servers / stage", "stage-db с очень длинным названием, чтобы проверить обрезку строки", ["stage", "db"], [["host", "198.51.100.40"], ["port", "5432"], ["password", "*"]]);
+  add("work / databases", "PostgreSQL каталог", ["prod", "db"], [["host", "db.example.test"], ["port", "5432"], ["user", "catalog_app"], ["password", "*"]], 2);
+  add("work / databases", "PostgreSQL отчёты (реплика)", ["prod", "db", "readonly"], [["host", "replica.example.test"], ["port", "5433"], ["user", "reports_ro"], ["password", "*"]]);
+  add("work / databases", "Redis кеш", ["prod", "db"], [["host", "cache.example.test"], ["port", "6379"], ["token", "*"]]);
+  add("work / databases", "ClickHouse аналитика", ["db", "analytics"], [["url", "https://ch.example.test:8443/"], ["user", "analyst"], ["password", "*"], ["note", "лимит запроса — 60 секунд"]]);
+  add("work / cloud / aws", "AWS root", ["cloud", "2fa"], [["login", "root@example.test"], ["password", "*"], ["totp", "*"]], true);
+  add("work / cloud / aws", "AWS ci-deployer", ["cloud", "ci"], [["access_key", "AKIAEXAMPLE0000DEMO"], ["secret_key", "*"]]);
+  add("work / cloud / aws / s3", "бакет бэкапов", ["cloud", "backup"], [["bucket", "backups-example-test"], ["region", "eu-central-1"]]);
+  add("work / cloud / gcp", "GCP проект analytics", ["cloud", "analytics"], [["project", "analytics-example"], ["token", "*"]]);
+  add("work / ci", "GitHub Actions — деплой", ["ci"], [["url", "https://github.example.test/org/app"], ["token", "*"]], true);
+  add("work / ci", "Docker registry", ["ci"], [["url", "https://registry.example.test/"], ["login", "ci-bot"], ["password", "*"]]);
+  add("work / ci", "SonarQube", ["ci"], [["url", "https://sonar.example.test/"], ["token", "*"]]);
+  add("work / сайты", "example.test — админка", ["web", "prod"], [["url", "https://example.test/admin"], ["login", "admin"], ["password", "*"]], true);
+  add("work / сайты", "блог (WordPress)", ["web"], [["url", "https://blog.example.test/wp-admin"], ["login", "editor"], ["password", "*"]]);
+  add("work / сайты", "лендинг акции", ["web", "stage"], [["url", "https://promo.example.test/"], ["login", "marketing"], ["password", "*"]]);
+  add("work / почта", "служебный ящик", ["mail"], [["login", "noreply@example.test"], ["password", "*"], ["smtp", "smtp.example.test:587"]]);
+  add("work / почта", "ящик поддержки", ["mail"], [["login", "support@example.test"], ["password", "*"]]);
+
+  add("clients / Acme", "Acme — VPN", ["vpn", "client"], [["server", "vpn.acme.example"], ["login", "contractor-7"], ["password", "*"]], true);
+  add("clients / Acme", "Acme — Jira", ["client"], [["url", "https://acme.example/jira"], ["login", "contractor-7"], ["password", "*"]]);
+  add("clients / Acme / стенды", "Acme stage", ["client", "stage"], [["ssh", "user@192.0.2.20"], ["password", "*"]]);
+  add("clients / Globex", "Globex — портал", ["client"], [["url", "https://portal.globex.example/"], ["login", "me@example.test"], ["password", "*"], ["note", "доступ до конца квартала"]]);
+  add("clients / Globex", "Globex — FTP", ["client", "legacy"], [["host", "ftp.globex.example"], ["login", "upload"], ["password", "*"]]);
+
+  add("my", "почта", ["mail"], [["login", "me@example.test"], ["password", "*"]], true);
+  add("my", "вторая почта", ["mail"], [["login", "me.backup@example.test"], ["password", "*"]]);
+  add("my / банки", "Банк — онлайн", ["bank", "2fa"], [["login", "me1985"], ["password", "*"], ["note", "кодовое слово — в бумажной записной книжке"]], true);
+  add("my / банки", "Банк — карта", ["bank"], [["pin", "*"]]);
+  add("my / банки", "брокерский счёт", ["bank", "2fa"], [["login", "me1985"], ["password", "*"], ["otp", "*"]]);
+  add("my / подписки", "музыка", ["subscription"], [["login", "me@example.test"], ["password", "*"]]);
+  add("my / подписки", "кино", ["subscription"], [["login", "me@example.test"], ["password", "*"]], true);
+  add("my / подписки", "облачное хранилище", ["subscription", "backup"], [["login", "me@example.test"], ["password", "*"]]);
+  add("my / дом", "роутер", ["home", "net"], [["url", "http://192.0.2.1/"], ["login", "admin"], ["password", "*"]], true);
+  add("my / дом", "умная колонка", ["home"], [["login", "me@example.test"], ["password", "*"]]);
+  add("my / дом / дача", "камера у ворот", ["home"], [["url", "http://192.0.2.50/"], ["login", "viewer"], ["password", "*"]]);
+  add("my / документы", "Госуслуги", ["gov", "2fa"], [["login", "+7 900 000-00-00"], ["password", "*"]], true);
+  add("my / игры", "Steam", ["games"], [["login", "player_one"], ["password", "*"]]);
+  return out;
+}
+
+// Записи каждого хранилища заглушки; ENTRIES — записи открытого.
+const vaults: Record<string, MockEntry[]> = {};
+let openVaultName = "vault.md.age";
+
+function openVault(path: string) {
+  const name = path.split("/").pop() ?? path;
+  // Остальные файлы заглушки показывают одни и те же записи, как и раньше.
+  if (name === openVaultName || (name !== BIG_VAULT && openVaultName !== BIG_VAULT)) return;
+  vaults[openVaultName] = ENTRIES.slice();
+  const next = vaults[name] ?? (name === BIG_VAULT ? bigVault() : vaults["vault.md.age"]);
+  ENTRIES.splice(0, ENTRIES.length, ...next);
+  openVaultName = name;
+}
 
 // Резервные копии заглушки: какими записи были в момент копии.
 type MockEntry = (typeof ENTRIES)[number];
@@ -167,6 +258,7 @@ mockIPC(
       if (Date.now() < retryUntil) throw { kind: "tooSoon", retryInMs: retryUntil - Date.now() };
       if (a.path.includes("broken")) throw { kind: "damaged", detail: "authentication tag mismatch" };
       if (!a.path.endsWith(".age")) {
+        openVault(a.path);
         unlocked = true;
         protection = "none";
         return protection;
@@ -175,6 +267,7 @@ mockIPC(
         retryUntil = Date.now() + 3000;
         throw { kind: "wrongPassphrase", retryInMs: 3000 };
       }
+      openVault(a.path);
       unlocked = true;
       lastVault = a.path;
       protection = "strong";
