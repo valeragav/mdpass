@@ -112,7 +112,7 @@ fn preview(analysis: &Analysis) -> ImportPreview {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn analyze_import(path: String, fixes: FixesInput) -> Result<ImportPreview, CommandError> {
     let source = read_source(Path::new(&path))?;
     Ok(preview(&analyze(&source, fixes.into())))
@@ -136,7 +136,7 @@ pub async fn run_import(state: State<'_, AppState>, path: String, fixes: FixesIn
 
 /// Удаляет исходный открытый файл после импорта. Удалить можно только тот файл,
 /// который импортировали в этой сессии.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_import_source(state: State<'_, AppState>, path: String) -> Result<(), CommandError> {
     let mut session = state.lock();
     let path = PathBuf::from(path);

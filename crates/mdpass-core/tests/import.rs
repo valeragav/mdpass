@@ -162,3 +162,23 @@ fn odd_sections_keys_and_tags_do_not_stop_an_import() {
     assert!(a.fields.iter().any(|f| f.key == "note" && f.value.contains("#x: значение")));
     assert!(a.tags.iter().all(|t| !t.contains(']')));
 }
+
+// Найдено проверкой: `### *b*` становился `***b***`, и запись b сливалась с предыдущей.
+#[test]
+fn legacy_titles_with_stars_stay_separate_entries() {
+    let converted = convert_legacy_entries("### a\npassword: 1\n### *b*\npassword: 2\n");
+    assert_eq!(converted, "**a**\npassword: 1\n**b**\npassword: 2\n");
+    assert_eq!(Document::parse(&converted).entries().len(), 2);
+}
+
+#[test]
+fn import_leaves_links_alone() {
+    let result = analyze("**bank**\nlogin: me\nhttps://bank.example\n", Fixes::default()).result;
+    assert!(result.to_markdown().contains("\nhttps://bank.example\n"));
+}
+
+#[test]
+fn entry_with_only_a_favorite_mark_is_not_empty() {
+    let result = analyze("**a**\nfavorite: true\n", Fixes::default()).result;
+    assert_eq!(result.entries().len(), 1);
+}

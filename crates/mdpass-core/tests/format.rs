@@ -411,3 +411,56 @@ fn new_favorite_goes_after_numbered_ones() {
     doc.set_favorite(b, false).unwrap();
     assert_eq!(doc.entry(b).unwrap().favorite, Favorite::No);
 }
+
+// Найдено проверкой: ссылка, путь и время внутри записи читались полями и портились.
+#[test]
+fn links_paths_and_times_are_not_fields() {
+    let doc = Document::parse(
+        "**a**\nlogin: me\nhttps://bank.example\nC:\\keys\\id_rsa\nD:/keys\n10:30 звонок\nurl: https://x.test\nk:v\n",
+    );
+    let entry = &doc.entries()[0];
+    let keys: Vec<&str> = entry.fields.iter().map(|f| f.key.as_str()).collect();
+    assert_eq!(keys, ["login", "url", "k"]);
+    assert_eq!(entry.extra, ["https://bank.example", "C:\\keys\\id_rsa", "D:/keys", "10:30 звонок"]);
+}
+
+// Ключ, который нельзя записать обратно, остаётся текстом: иначе запись не сохранилась бы.
+#[test]
+fn keys_that_cannot_be_written_back_stay_as_text() {
+    let mut doc = Document::parse("**a**\n#x: 1\n*y: 2\na!!: 3\ntags!: 4\nlogin: l\n");
+    let entry = doc.entries().remove(0);
+    assert_eq!(entry.fields.len(), 1);
+    assert_eq!(entry.extra, ["#x: 1", "*y: 2", "a!!: 3", "tags!: 4"]);
+    doc.update(entry.id, draft(&[], "a", entry.fields.clone(), &[])).unwrap();
+}
+
+#[test]
+fn section_names_that_would_not_read_back_are_rejected() {
+    let mut doc = Document::default();
+    let err = doc.add(draft(&["C #"], "a", vec![field("k", "v")], &[])).unwrap_err();
+    assert_eq!(err, FormatError::InvalidSection("C #".into()));
+    assert!(doc.add(draft(&["C#"], "a", vec![field("k", "v")], &[])).is_ok());
+}
+
+#[test]
+fn huge_favorite_number_does_not_overflow() {
+    let mut doc = Document::parse("**a**\nfavorite: 4294967295\n\n**b**\nk: v\n");
+    let b = doc.entries()[1].id;
+    doc.set_favorite(b, true).unwrap();
+    assert_eq!(doc.entry(b).unwrap().favorite, Favorite::At(u32::MAX));
+}
+
+#[test]
+fn ordering_part_of_the_favorites_keeps_numbers_unique() {
+    let mut doc = Document::parse("**a**\nfavorite: 1\n\n**b**\nfavorite: 2\n\n**c**\nfavorite: 3\n");
+    let ids: Vec<_> = doc.entries().iter().map(|e| e.id).collect();
+    doc.order_favorites(&[ids[2], ids[0], ids[2]]).unwrap();
+    let places: Vec<Favorite> = doc.entries().iter().map(|e| e.favorite).collect();
+    assert_eq!(places, [Favorite::At(2), Favorite::At(3), Favorite::At(1)]);
+}
+
+#[test]
+fn debug_output_hides_free_lines() {
+    let doc = Document::parse("**a**\nсекретная строка без ключа\n");
+    assert!(!format!("{:?}", doc.entries()[0]).contains("секретная"));
+}

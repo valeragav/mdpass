@@ -24,9 +24,25 @@ pub(crate) fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut temp = temp_file_near(path)?;
     temp.write_all(bytes)?;
     temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|err| err.error)?;
+    persist_retrying(temp, path)?;
     sync_parent(path);
     Ok(())
+}
+
+/// Замена файла. На Windows её ненадолго блокирует антивирус или клиент синхронизации,
+/// который как раз читает файл: тогда пробуем ещё несколько раз.
+fn persist_retrying(mut temp: tempfile::NamedTempFile, path: &Path) -> io::Result<()> {
+    for _ in 0..5 {
+        match temp.persist(path) {
+            Ok(_) => return Ok(()),
+            Err(err) if err.error.kind() == io::ErrorKind::PermissionDenied => {
+                temp = err.file;
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(err) => return Err(err.error),
+        }
+    }
+    temp.persist(path).map(drop).map_err(|err| err.error)
 }
 
 /// На Unix переименование надёжно попадает на диск только после синхронизации папки.

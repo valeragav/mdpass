@@ -221,12 +221,10 @@ export const api = {
     call<number>("restore_backup_entry", { id, path, title }),
   restoreDamagedVault: (path: string, id: string, passphrase: string | null) =>
     invoke<void>("restore_damaged_vault", { path, id, passphrase }),
-  async exportBackup(id: string, path?: string): Promise<boolean> {
-    const to = await save({ defaultPath: id, filters: VAULT_FILTERS, title: "Сохранить копию как файл" });
-    if (!to) return false;
-    await invoke<void>("export_backup", { path, id, to });
-    return true;
-  },
+  /// Место для файла выбирают в диалоге, который открывает Rust. `false` — диалог закрыли.
+  exportBackup: (id: string, path?: string) => invoke<boolean>("export_backup", { path, id }),
+  /// Забыть копию, открытую на экране копий: её расшифрованный текст больше не нужен.
+  closeBackup: () => invoke<void>("close_backup"),
   entries: () => invoke<EntryView[]>("entries"),
   revealField: (entryId: number, field: number) => invoke<string>("reveal_field", { entryId, field }),
   copyField: (entryId: number, field: number) => invoke<void>("copy_field", { entryId, field }),

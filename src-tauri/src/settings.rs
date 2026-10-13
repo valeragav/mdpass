@@ -52,7 +52,7 @@ impl Settings {
 }
 
 /// Сохраняет настройки и возвращает их в том виде, в каком они применились.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn update_settings(state: State<'_, AppState>, settings: Settings) -> Settings {
     let mut session = state.lock();
     let mut config = session.config.clone();

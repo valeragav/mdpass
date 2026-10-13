@@ -17,7 +17,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use serde::Serialize;
 
 use crate::fs_atomic::{write_atomic, write_new};
-use crate::vault::{Passphrase, Vault, VaultError, decrypt_file};
+use crate::vault::{Passphrase, Vault, VaultError, VaultOptions, decrypt_file, encrypt, is_encrypted, plain_text};
 
 const EXTENSION: &str = ".age";
 
@@ -100,7 +100,8 @@ impl BackupStore {
                 list.push(info);
             }
         }
-        list.sort_by(|a, b| b.created.cmp(&a.created).then_with(|| b.id.cmp(&a.id)));
+        // При одинаковом времени новее копия с большим номером: `…-update-2` новее `…-update`.
+        list.sort_by(|a, b| b.created.cmp(&a.created).then_with(|| copy_number(&b.id).cmp(&copy_number(&a.id))));
         Ok(list)
     }
 
@@ -136,10 +137,37 @@ impl BackupStore {
 
     /// Удаляет старые копии, оставляя `keep` самых новых.
     pub fn prune(&self, keep: usize) -> io::Result<()> {
-        for old in self.list()?.into_iter().skip(keep) {
+        self.prune_keeping(keep, None)
+    }
+
+    /// Как `prune`, но копию `fresh` не удаляет никогда: она только что записана. Иначе
+    /// копии со временем из будущего (часы когда-то спешили) вытесняли бы каждую новую.
+    pub fn prune_keeping(&self, keep: usize, fresh: Option<&str>) -> io::Result<()> {
+        let mut list = self.list()?;
+        if let Some(fresh) = fresh
+            && let Some(at) = list.iter().position(|info| info.id == fresh)
+        {
+            let info = list.remove(at);
+            list.insert(0, info);
+        }
+        for old in list.into_iter().skip(keep.max(1)) {
             fs::remove_file(self.dir.join(&old.id))?;
         }
         Ok(())
+    }
+
+    /// Удаляет копии без шифрования. Нужно, когда хранилище начали шифровать:
+    /// старые открытые копии иначе пролежали бы в папке приложения ещё долго.
+    pub fn remove_plain(&self) -> io::Result<usize> {
+        let mut removed = 0;
+        for info in self.list()? {
+            let path = self.dir.join(&info.id);
+            if !is_encrypted(&fs::read(&path)?) {
+                fs::remove_file(path)?;
+                removed += 1;
+            }
+        }
+        Ok(removed)
     }
 
     /// Путь к копии. Принимает только имена, которые создаёт само хранилище копий:
@@ -155,16 +183,31 @@ impl BackupStore {
 /// Восстанавливает хранилище из копии, когда сам файл не открывается.
 ///
 /// Копия сначала проверяется паролем; открытой копии пароль не нужен. Повреждённый файл не удаляется: он
-/// переименовывается в `<имя>.damaged-<время>` рядом с хранилищем.
+/// переименовывается в `<имя>.damaged-<время>` рядом с хранилищем. Если файл всё-таки
+/// открывается этим паролем, восстановления нет. Копия без шифрования, восстановленная
+/// с паролем, шифруется со сложностью `options`: восстановление не снимает защиту с хранилища.
 pub fn restore_damaged(
     vault_path: &Path,
     store: &BackupStore,
     id: &str,
     passphrase: Option<Passphrase>,
+    options: VaultOptions,
     now: SystemTime,
 ) -> Result<Vault, VaultError> {
-    let bytes = store.read(id)?;
+    let mut bytes = store.read(id)?;
     decrypt_file(&bytes, passphrase.as_ref())?;
+    // Исправный файл: зашифрован, если есть пароль, и открывается им.
+    if let Ok(current) = fs::read(vault_path)
+        && is_encrypted(&current) == passphrase.is_some()
+        && decrypt_file(&current, passphrase.as_ref()).is_ok()
+    {
+        return Err(VaultError::NotDamaged);
+    }
+    if let Some(passphrase) = &passphrase
+        && !is_encrypted(&bytes)
+    {
+        bytes = encrypt(&plain_text(&bytes)?, passphrase, options)?;
+    }
     if vault_path.exists() {
         let name = vault_path.file_name().map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         let aside = vault_path.with_file_name(format!("{name}.damaged-{}", format_stamp(now)));
@@ -193,6 +236,7 @@ fn path_key(path: &Path) -> String {
 /// Переносит папку целиком. Если переименовать нельзя (другой диск или папка
 /// уже есть), файлы копируются по одному, существующие не перезаписываются.
 fn move_dir(from: &Path, to: &Path) -> io::Result<()> {
+    let mut skipped = false;
     if !from.is_dir() || from == to {
         return Ok(());
     }
@@ -206,11 +250,26 @@ fn move_dir(from: &Path, to: &Path) -> io::Result<()> {
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let target = to.join(entry.file_name());
-        if entry.file_type()?.is_file() && !target.exists() {
-            fs::copy(entry.path(), &target)?;
+        if !entry.file_type()?.is_file() {
+            continue;
         }
+        if target.exists() {
+            // Такая копия уже есть в новой папке: старую не трогаем, чтобы ничего не потерять.
+            skipped = true;
+            continue;
+        }
+        fs::copy(entry.path(), &target)?;
+        fs::remove_file(entry.path())?;
     }
-    fs::remove_dir_all(from)
+    if !skipped {
+        let _ = fs::remove_dir(from);
+    }
+    Ok(())
+}
+
+/// Номер повтора в имени копии: `…-update-2.age` → 2, без номера — 0.
+fn copy_number(id: &str) -> u32 {
+    id.strip_suffix(EXTENSION).and_then(|stem| stem.rsplit_once('-')).and_then(|(_, n)| n.parse().ok()).unwrap_or(0)
 }
 
 /// `20261012T114203123Z-update.age` или с суффиксом `…-update-1.age`.

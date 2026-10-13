@@ -10,7 +10,8 @@
 //! заголовки превращаются в жирное название `**web-01**`.
 
 use crate::format::{
-    Document, Entry, EntryDraft, EntryId, Field, FormatError, content, entry_title_of, heading_of, is_valid_key,
+    Document, Entry, EntryDraft, EntryId, Field, FormatError, content, entry_title_of, heading_of, is_field_line,
+    is_valid_key,
 };
 
 /// Переписывает заголовки-записи старого вида в жирные названия. Заголовок
@@ -29,6 +30,8 @@ pub fn convert_legacy_entries(markdown: &str) -> String {
         let end = next.map_or(lines.len(), |h| h.0);
         let leaf = next.is_none_or(|h| h.1 <= *level);
         let has_entries = lines[start + 1..end].iter().any(|line| entry_title_of(content(line)).is_some());
+        // Звёздочки по краям названия убираются: `***b***` уже не прочитался бы записью.
+        let title = title.trim_matches('*').trim();
         if leaf && !has_entries && !title.is_empty() {
             let line = lines[*start];
             let ending = &line[content(line).len()..];
@@ -104,7 +107,7 @@ fn duplicate_notes(entry: &Entry) -> bool {
 }
 
 fn is_empty(entry: &Entry) -> bool {
-    entry.fields.is_empty() && entry.tags.is_empty() && entry.extra.is_empty()
+    entry.fields.is_empty() && entry.tags.is_empty() && entry.extra.is_empty() && !entry.favorite.is_on()
 }
 
 /// Есть ли в исходном тексте записи строка `ключ:значение` без пробела.
@@ -113,12 +116,9 @@ fn missing_space(source: &str) -> bool {
         if line.starts_with([' ', '\t']) {
             return false;
         }
-        match line.split_once(':') {
-            Some((key, value)) => {
-                !key.is_empty() && !key.contains(char::is_whitespace) && value.starts_with(|c: char| !c.is_whitespace())
-            }
-            None => false,
-        }
+        // Ссылки вроде `https://…` полями не считаются, их не трогаем.
+        is_field_line(line)
+            && line.split_once(':').is_some_and(|(_, value)| value.starts_with(|c: char| !c.is_whitespace()))
     })
 }
 
@@ -204,13 +204,19 @@ fn apply(doc: &mut Document, kind: IssueKind, id: EntryId) -> Result<(), FormatE
 /// скобки внутри тега. Такое не теряется, а переезжает в заметку записи.
 pub(crate) fn portable_draft(entry: &Entry) -> EntryDraft {
     let mut loose: Vec<String> = entry.extra.iter().map(|line| line.trim().to_string()).collect();
+    // Секретное поле с неподходящим ключом не должно стать открытой заметкой.
+    let mut loose_secret: Vec<String> = Vec::new();
     let mut fields = Vec::new();
     for field in &entry.fields {
         if is_valid_key(field.key.trim()) {
             fields.push(field.clone());
         } else {
-            loose.push(format!("{}: {}", field.key, field.value.replace('\n', " ")));
+            let line = format!("{}: {}", field.key, field.value.replace('\n', " "));
+            if field.secret { loose_secret.push(line) } else { loose.push(line) }
         }
+    }
+    if !loose_secret.is_empty() {
+        fields.push(Field::new("secret_note", loose_secret.join("\n")));
     }
     let loose: Vec<String> = loose.into_iter().filter(|line| !line.is_empty()).collect();
     if !loose.is_empty() {

@@ -7,7 +7,7 @@ mod importing;
 mod session;
 mod settings;
 
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
@@ -64,7 +64,7 @@ fn watch_idle(app: AppHandle) {
             std::thread::sleep(IDLE_CHECK);
             let state = app.state::<AppState>();
             let mut session = state.lock();
-            if session.idle_expired(Instant::now()) {
+            if session.idle_expired(SystemTime::now()) {
                 session.lock_vault();
                 drop(session);
                 let _ = app.emit(LOCKED_EVENT, "idle");
@@ -108,13 +108,18 @@ pub fn run() {
             if let WindowEvent::Resized(_) = event
                 && window.is_minimized().unwrap_or(false)
             {
-                let state = window.state::<AppState>();
-                let mut session = state.lock();
-                if session.vault.is_some() && session.config.lock_on_minimize {
-                    session.lock_vault();
-                    drop(session);
-                    let _ = window.emit(LOCKED_EVENT, "minimized");
-                }
+                // Сессию может держать запись файла (около секунды): ждём её не в потоке
+                // окна, иначе окно зависнет.
+                let window = window.clone();
+                std::thread::spawn(move || {
+                    let state = window.state::<AppState>();
+                    let mut session = state.lock();
+                    if session.vault.is_some() && session.config.lock_on_minimize {
+                        session.lock_vault();
+                        drop(session);
+                        let _ = window.emit(LOCKED_EVENT, "minimized");
+                    }
+                });
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -134,6 +139,7 @@ pub fn run() {
             backups::reveal_backup_field,
             backups::copy_backup_field,
             backups::restore_backup_entry,
+            backups::close_backup,
             backups::restore_damaged_vault,
             backups::export_backup,
             backups::backups_location,

@@ -4,6 +4,7 @@
 // «work.md.age» из недавних открывается с большим набором записей.
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { isSecretName } from "../lib/entryText";
+import { minMasterLength } from "../lib/text";
 
 const HOME = "/home/demo";
 const describe = (path: string) => ({
@@ -218,6 +219,19 @@ function applyDraft(draft: Draft, current?: (typeof ENTRIES)[number]) {
 }
 
 let unlocked = false;
+
+// Команды, которым нужно открытое хранилище. После блокировки Rust отвечает «locked» —
+// заглушка тоже, чтобы тесты ловили обращения к записям после блокировки.
+const NEEDS_VAULT = new Set([
+  "entries", "reveal_field", "copy_field", "add_entry", "update_entry", "delete_entry", "set_favorite",
+  "order_favorites", "move_entry", "move_section", "reload_vault", "preview_backup", "reveal_backup_field",
+  "copy_backup_field", "restore_backup_entry", "restore_backup",
+]);
+
+/// Rust раздаёт номера записей заново, когда перечитывает файл: заглушка тоже.
+function renumber() {
+  ENTRIES.forEach((entry, i) => (entry.id = i + 1));
+}
 let settings = {
   autoLockMinutes: 5,
   clipboardClearSeconds: 30,
@@ -235,6 +249,7 @@ let retryUntil = 0;
 mockIPC(
   (cmd, args) => {
   const a = (args ?? {}) as Record<string, string>;
+  if (NEEDS_VAULT.has(cmd) && !unlocked) throw { kind: "locked" };
   switch (cmd) {
     case "status":
       return {
@@ -288,6 +303,7 @@ mockIPC(
       return describe(lastVault);
     }
     case "reload_vault":
+      renumber();
       return null;
     case "add_entry": {
       // Запись «конфликт» изображает файл, который изменили вне приложения.
@@ -390,12 +406,15 @@ mockIPC(
       return id;
     }
     case "restore_backup":
+      renumber();
       return null;
     case "restore_damaged_vault":
       if ((args as { passphrase: string }).passphrase !== "password1") throw { kind: "wrongPassphrase", retryInMs: 3000 };
       unlocked = true;
       return null;
     case "export_backup":
+      return true;
+    case "close_backup":
       return null;
     case "plugin:opener|reveal_item_in_dir":
       return null;
@@ -431,8 +450,9 @@ mockIPC(
     case "change_protection": {
       const n = args as { current: string | null; new: string | null; protection: typeof protection };
       if (protection !== "none" && n.current !== "password1") throw { kind: "wrongPassphrase", retryInMs: 3000 };
-      if (n.protection !== "none" && (n.new ?? "").length < 8)
-        throw { kind: "invalid", message: "Мастер-пароль должен быть не короче 8 символов" };
+      const min = minMasterLength(n.protection);
+      if (n.protection !== "none" && (n.new ?? "").length < min)
+        throw { kind: "invalid", message: `Мастер-пароль должен быть не короче ${min} символов` };
       protection = n.protection;
       if (lastVault) {
         lastVault = protection === "none" ? lastVault.replace(/\.age$/, "") : lastVault.replace(/(\.md)?$/, ".md.age").replace(".md.age.md.age", ".md.age");

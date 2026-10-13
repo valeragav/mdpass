@@ -1,7 +1,7 @@
 //! Команды, которые вызывает интерфейс.
 
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Instant, SystemTime};
 
 use age::secrecy::ExposeSecret;
 use mdpass_core::backup::BackupKind;
@@ -60,6 +60,7 @@ impl From<VaultError> for CommandError {
                 Self::Damaged { detail }
             }
             VaultError::ChangedOnDisk => Self::ChangedOnDisk,
+            VaultError::NotDamaged => Self::Invalid { message: VaultError::NotDamaged.to_string() },
             VaultError::PassphraseRequired => Self::PassphraseRequired,
             VaultError::NewerFormat(version) => Self::Invalid {
                 message: format!("Файл записан более новой версией mdpass (формат {version}). Обновите приложение"),
@@ -159,7 +160,7 @@ pub struct Status {
     settings: Settings,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn status<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Status {
     let session = state.lock();
     let default_vault = app.path().document_dir().ok().map(|dir| describe(&app, &dir.join(DEFAULT_FILE_NAME)));
@@ -173,7 +174,7 @@ pub fn status<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Stat
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn describe_path<R: Runtime>(app: AppHandle<R>, path: String) -> VaultFile {
     describe(&app, Path::new(&path))
 }
@@ -199,8 +200,8 @@ pub async fn create_vault(
         };
         let protection = Protection::of(&vault);
         let mut session = state.lock();
-        session.vault = Some(vault);
-        session.touch(Instant::now());
+        session.replace_vault(vault);
+        session.touch(SystemTime::now());
         session.config.remember(path);
         session.save_config();
         Ok(protection)
@@ -241,8 +242,8 @@ pub async fn unlock(
             Ok(vault) => {
                 let protection = Protection::of(&vault);
                 session.limiter.succeeded();
-                session.vault = Some(vault);
-                session.touch(Instant::now());
+                session.replace_vault(vault);
+                session.touch(SystemTime::now());
                 session.config.remember(path);
                 session.save_config();
                 Ok(protection)
@@ -258,7 +259,7 @@ pub async fn unlock(
     .await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn lock(state: State<'_, AppState>) {
     state.lock().lock_vault();
 }
@@ -285,7 +286,7 @@ pub async fn reload_vault(state: State<'_, AppState>) -> Result<(), CommandError
 
 /// Переименовывает файл открытого хранилища в той же папке. Расширение `.md.age`
 /// или `.md` подставляется по защите, папка резервных копий переезжает следом.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn rename_vault<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, AppState>,
@@ -316,9 +317,9 @@ pub fn rename_vault<R: Runtime>(
 }
 
 /// Интерфейс сообщает, что пользователь что-то делает: откладывает автоблокировку.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn touch(state: State<'_, AppState>) {
-    state.lock().touch(Instant::now());
+    state.lock().touch(SystemTime::now());
 }
 
 /// Меняет защиту открытого хранилища: пароль, силу шифрования или снимает шифрование.
@@ -361,6 +362,7 @@ pub async fn change_protection<R: Runtime>(
             (Some(_), None) => return Err(CommandError::EmptyPassphrase),
         };
         session.limiter.succeeded();
+        let encrypting = key.is_some();
         let policy = session.backup_policy();
         let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
         match &policy {
@@ -380,6 +382,11 @@ pub async fn change_protection<R: Runtime>(
             session.save_config();
         }
         let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
+        // Хранилище теперь шифруется: открытые копии прежних версий удаляются, иначе
+        // все пароли ещё долго лежали бы в папке приложения открытым текстом.
+        if encrypting && let Err(err) = session.backup_store(vault.path()).remove_plain() {
+            log::warn!("не удалось удалить незашифрованные копии: {err}");
+        }
         Ok(ProtectionChanged { protection: Protection::of(vault), vault: describe(&app, vault.path()) })
     })
     .await

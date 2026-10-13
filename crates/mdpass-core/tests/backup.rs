@@ -186,12 +186,12 @@ fn damaged_vault_is_restored_from_a_backup_and_kept_aside() {
     fs::write(&path, b"broken").unwrap();
 
     assert!(matches!(
-        restore_damaged(&path, &store, &backup.id, Some(pass("wrong")), at(1)),
+        restore_damaged(&path, &store, &backup.id, Some(pass("wrong")), FAST, at(1)),
         Err(VaultError::WrongPassphrase)
     ));
     assert_eq!(fs::read(&path).unwrap(), b"broken", "неверный пароль ничего не меняет");
 
-    let restored = restore_damaged(&path, &store, &backup.id, Some(pass("p")), at(1)).unwrap();
+    let restored = restore_damaged(&path, &store, &backup.id, Some(pass("p")), FAST, at(1)).unwrap();
     assert_eq!(restored.document().entries()[0].title, "alpha");
     assert_eq!(fs::read(&path).unwrap(), good);
     let aside: Vec<_> = fs::read_dir(dir.path())
@@ -231,7 +231,7 @@ fn damaged_open_vault_is_restored_without_a_passphrase() {
     drop(vault);
     fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
 
-    let restored = restore_damaged(&path, &store, &backup.id, None, at(1)).unwrap();
+    let restored = restore_damaged(&path, &store, &backup.id, None, FAST, at(1)).unwrap();
     assert!(!restored.is_encrypted());
     assert_eq!(restored.document().entries()[0].title, "alpha");
 }
@@ -310,4 +310,66 @@ login: a
     let id = restore_entry(&mut current, &backup.entries()[0]).unwrap();
     let note = current.entry(id).unwrap().fields.into_iter().find(|f| f.key == "note").unwrap();
     assert_eq!(note.value, "свободная строка");
+}
+
+// Найдено проверкой: копия без шифрования снимала шифрование с хранилища.
+#[test]
+fn restoring_a_damaged_vault_from_an_open_copy_encrypts_it() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md.age");
+    let store = BackupStore::for_vault(&path);
+    let backup = store.save(b"**alpha**\nlogin: a\n", BackupKind::Update, at(0)).unwrap();
+    fs::write(&path, b"\xff broken").unwrap();
+    let restored = restore_damaged(&path, &store, &backup.id, Some(pass("p")), FAST, at(1)).unwrap();
+    assert!(restored.is_encrypted());
+    assert!(mdpass_core::vault::is_encrypted(&fs::read(&path).unwrap()));
+    assert_eq!(Vault::open(&path, pass("p")).unwrap().document().entries()[0].title, "alpha");
+}
+
+#[test]
+fn a_vault_that_opens_is_not_restored_as_damaged() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("vault.md.age");
+    let store = BackupStore::for_vault(&path);
+    Vault::create(&path, pass("p"), FAST).unwrap();
+    let good = fs::read(&path).unwrap();
+    let backup = store.save(&good, BackupKind::Update, at(0)).unwrap();
+    assert!(matches!(
+        restore_damaged(&path, &store, &backup.id, Some(pass("p")), FAST, at(1)),
+        Err(VaultError::NotDamaged)
+    ));
+}
+
+#[test]
+fn open_copies_are_removed_when_asked() {
+    let dir = TempDir::new().unwrap();
+    let store = BackupStore::for_vault(&dir.path().join("vault.md.age"));
+    store.save(b"**a**\nk: v\n", BackupKind::Update, at(0)).unwrap();
+    let path = dir.path().join("v.md.age");
+    Vault::create(&path, pass("p"), FAST).unwrap();
+    let encrypted = store.save(&fs::read(&path).unwrap(), BackupKind::Update, at(1)).unwrap();
+    assert_eq!(store.remove_plain().unwrap(), 1);
+    let left: Vec<String> = store.list().unwrap().into_iter().map(|b| b.id).collect();
+    assert_eq!(left, [encrypted.id]);
+}
+
+#[test]
+fn a_fresh_copy_survives_pruning_even_behind_copies_from_the_future() {
+    let dir = TempDir::new().unwrap();
+    let store = BackupStore::for_vault(&dir.path().join("vault.md.age"));
+    store.save(b"future", BackupKind::Update, at(10_000)).unwrap();
+    let fresh = store.save(b"now", BackupKind::Update, at(1)).unwrap();
+    store.prune_keeping(1, Some(&fresh.id)).unwrap();
+    let left: Vec<String> = store.list().unwrap().into_iter().map(|b| b.id).collect();
+    assert_eq!(left, [fresh.id]);
+}
+
+#[test]
+fn repeated_copies_in_one_millisecond_sort_newest_first() {
+    let dir = TempDir::new().unwrap();
+    let store = BackupStore::for_vault(&dir.path().join("vault.md.age"));
+    let first = store.save(b"1", BackupKind::Update, at(5)).unwrap();
+    let second = store.save(b"2", BackupKind::Update, at(5)).unwrap();
+    let ids: Vec<String> = store.list().unwrap().into_iter().map(|b| b.id).collect();
+    assert_eq!(ids, [second.id, first.id]);
 }

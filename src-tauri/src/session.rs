@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 use mdpass_core::config::AppConfig;
 use mdpass_core::vault::{AttemptLimiter, Vault};
@@ -21,8 +21,10 @@ pub struct Session {
     config_path: PathBuf,
     /// Папка резервных копий в папке данных приложения.
     pub backups_root: PathBuf,
-    /// Последнее действие пользователя. От него считается автоблокировка.
-    last_activity: Instant,
+    /// Последнее действие пользователя. От него считается автоблокировка. Часы
+    /// настенные: монотонные часы на macOS и Linux стоят, пока компьютер спит, и
+    /// хранилище, открытое перед сном, осталось бы открытым утром.
+    last_activity: SystemTime,
     /// Открытый файл, который импортировали последним: только его можно удалить.
     pub last_import: Option<PathBuf>,
     /// Копия, которую смотрят на экране резервных копий.
@@ -37,22 +39,30 @@ impl Session {
             config: AppConfig::load(&config_path),
             config_path,
             backups_root,
-            last_activity: Instant::now(),
+            last_activity: SystemTime::now(),
             last_import: None,
             open_backup: None,
         }
     }
 
-    pub fn touch(&mut self, now: Instant) {
+    pub fn touch(&mut self, now: SystemTime) {
         self.last_activity = now;
     }
 
     /// Пора ли заблокировать хранилище из-за бездействия.
-    pub fn idle_expired(&self, now: Instant) -> bool {
+    pub fn idle_expired(&self, now: SystemTime) -> bool {
         let minutes = self.config.auto_lock_minutes;
         self.vault.is_some()
             && minutes > 0
-            && now.saturating_duration_since(self.last_activity) >= Duration::from_secs(u64::from(minutes) * 60)
+            && now.duration_since(self.last_activity).unwrap_or_default()
+                >= Duration::from_secs(u64::from(minutes) * 60)
+    }
+
+    /// Открывает другое хранилище. Всё, что относилось к прежнему, забывается.
+    pub fn replace_vault(&mut self, vault: Vault) {
+        self.open_backup = None;
+        self.last_import = None;
+        self.vault = Some(vault);
     }
 
     /// Закрывает хранилище: расшифрованные данные стираются, буфер обмена очищается,
@@ -116,7 +126,7 @@ mod tests {
     fn idle_lock_fires_after_the_configured_minutes() {
         let dir = tempfile::TempDir::new().unwrap();
         let mut session = unlocked_session(&dir);
-        let start = Instant::now();
+        let start = SystemTime::now();
         session.touch(start);
         session.config.auto_lock_minutes = 5;
         assert!(!session.idle_expired(start + Duration::from_secs(299)));
@@ -130,7 +140,7 @@ mod tests {
     fn idle_lock_is_off_when_disabled_or_already_locked() {
         let dir = tempfile::TempDir::new().unwrap();
         let mut session = unlocked_session(&dir);
-        let start = Instant::now();
+        let start = SystemTime::now();
         session.touch(start);
         session.config.auto_lock_minutes = 0;
         assert!(!session.idle_expired(start + Duration::from_secs(86_400)));
@@ -138,5 +148,22 @@ mod tests {
         session.config.auto_lock_minutes = 1;
         session.vault = None;
         assert!(!session.idle_expired(start + Duration::from_secs(86_400)));
+    }
+
+    #[test]
+    fn opening_another_vault_forgets_the_previous_one() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut session = unlocked_session(&dir);
+        session.last_import = Some(dir.path().join("old.md"));
+        let other = Vault::create(
+            &dir.path().join("other.md.age"),
+            Passphrase::from("p".to_string()),
+            VaultOptions { work_factor: 4 },
+        )
+        .unwrap();
+        session.replace_vault(other);
+        assert!(session.last_import.is_none());
+        assert!(session.open_backup.is_none());
+        assert!(session.vault.as_ref().unwrap().path().ends_with("other.md.age"));
     }
 }

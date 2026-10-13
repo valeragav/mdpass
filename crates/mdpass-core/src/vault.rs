@@ -64,6 +64,8 @@ pub enum VaultError {
     Damaged(String),
     /// Файл на диске изменился с момента открытия или последней записи.
     ChangedOnDisk,
+    /// Восстанавливать «повреждённый» файл не нужно: он открывается.
+    NotDamaged,
     Io(io::Error),
 }
 
@@ -79,6 +81,7 @@ impl fmt::Display for VaultError {
             }
             Self::Damaged(reason) => write!(f, "Файл повреждён или изменён вне приложения: {reason}"),
             Self::ChangedOnDisk => write!(f, "Файл хранилища изменён вне приложения"),
+            Self::NotDamaged => write!(f, "Файл открывается: восстанавливать его из копии не нужно"),
             Self::Io(err) => write!(f, "Ошибка доступа к файлу: {err}"),
         }
     }
@@ -372,13 +375,13 @@ fn encode(document: &Document, key: Option<&Key>) -> Result<Vec<u8>, VaultError>
     }
 }
 
-fn plain_text(bytes: &[u8]) -> Result<Zeroizing<String>, VaultError> {
+pub(crate) fn plain_text(bytes: &[u8]) -> Result<Zeroizing<String>, VaultError> {
     std::str::from_utf8(bytes)
         .map(|text| Zeroizing::new(text.to_owned()))
         .map_err(|_| VaultError::Damaged("это не хранилище: файл не зашифрован и не текст UTF-8".into()))
 }
 
-fn encrypt(markdown: &str, passphrase: &Passphrase, options: VaultOptions) -> Result<Vec<u8>, VaultError> {
+pub(crate) fn encrypt(markdown: &str, passphrase: &Passphrase, options: VaultOptions) -> Result<Vec<u8>, VaultError> {
     let mut recipient = age::scrypt::Recipient::new(passphrase.clone());
     recipient.set_work_factor(options.work_factor);
     let encryptor = Encryptor::with_recipients(iter::once(&recipient as &dyn age::Recipient))

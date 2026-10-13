@@ -7,13 +7,14 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use mdpass_core::backup::{BackupKind, BackupStore, restore_damaged};
 use mdpass_core::diff::{Change, diff, find_entry, restore_entry};
 use mdpass_core::format::{Document, Entry, EntryId, Favorite};
-use mdpass_core::vault::{Passphrase, VaultError};
+use mdpass_core::vault::{Passphrase, VaultError, VaultOptions};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, Runtime, State};
+use tauri_plugin_dialog::DialogExt;
 use zeroize::Zeroizing;
 
 use crate::commands::{CommandError, run_blocking};
-use crate::entries::{clipboard_text, copy_to_clipboard, edit};
+use crate::entries::{clipboard_text, copy_to_clipboard, edit_with};
 use crate::session::{AppState, RETRY_DELAY, Session};
 
 /// Как делать копии перед записью: куда и сколько хранить.
@@ -26,8 +27,8 @@ impl BackupPolicy {
     /// Сохраняет байты файла перед записью и удаляет лишние старые копии.
     pub fn hook(&self, kind: BackupKind) -> impl FnOnce(&[u8]) -> io::Result<()> + '_ {
         move |bytes| {
-            self.store.save(bytes, kind, SystemTime::now())?;
-            self.store.prune(self.keep)
+            let saved = self.store.save(bytes, kind, SystemTime::now())?;
+            self.store.prune_keeping(self.keep, Some(&saved.id))
         }
     }
 }
@@ -50,7 +51,7 @@ impl Session {
     }
 
     /// Копия перед восстановлением делается всегда: так восстановление можно отменить.
-    fn policy_for(&self, path: &Path) -> BackupPolicy {
+    pub(crate) fn policy_for(&self, path: &Path) -> BackupPolicy {
         BackupPolicy {
             store: self.backup_store(path),
             keep: usize::try_from(self.config.backups_to_keep).unwrap_or(usize::MAX).max(1),
@@ -164,7 +165,7 @@ fn io_error(err: io::Error) -> CommandError {
 }
 
 /// Копии открытого хранилища или файла по пути, если хранилище не открывается.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_backups(state: State<'_, AppState>, path: Option<String>) -> Result<Vec<BackupView>, CommandError> {
     let store = store_for(&state.lock(), path)?;
     let list = store.list().map_err(io_error)?;
@@ -243,7 +244,9 @@ pub async fn restore_backup_entry(
     run_blocking(move || {
         let mut session = state.lock();
         let entry = backup_entry(&mut session, &id, &path, &title)?;
-        edit(&mut session, BackupKind::Restore, |doc| restore_entry(doc, &entry)).map(EntryId::get)
+        // Как и полное восстановление, делает копию всегда: его можно отменить.
+        let policy = session.vault.as_ref().map(|vault| session.policy_for(vault.path()));
+        edit_with(&mut session, policy, BackupKind::Restore, |doc| restore_entry(doc, &entry)).map(EntryId::get)
     })
     .await
 }
@@ -272,6 +275,12 @@ pub async fn restore_backup(state: State<'_, AppState>, id: String) -> Result<()
     .await
 }
 
+/// Забывает копию, открытую на экране копий: её расшифрованный текст больше не нужен.
+#[tauri::command(async)]
+pub fn close_backup(state: State<'_, AppState>) {
+    state.lock().open_backup = None;
+}
+
 /// Восстанавливает повреждённый файл из копии и открывает хранилище.
 #[tauri::command]
 pub async fn restore_damaged_vault(
@@ -289,11 +298,12 @@ pub async fn restore_damaged_vault(
         }
         let path = PathBuf::from(path);
         let store = session.backup_store(&path);
-        match restore_damaged(&path, &store, &id, passphrase, SystemTime::now()) {
+        // Копию без шифрования, восстановленную с паролем, шифруем надёжно.
+        match restore_damaged(&path, &store, &id, passphrase, VaultOptions::default(), SystemTime::now()) {
             Ok(vault) => {
                 session.limiter.succeeded();
-                session.vault = Some(vault);
-                session.touch(Instant::now());
+                session.replace_vault(vault);
+                session.touch(SystemTime::now());
                 session.config.remember(path);
                 session.save_config();
                 Ok(())
@@ -308,20 +318,35 @@ pub async fn restore_damaged_vault(
     .await
 }
 
-/// Сохраняет копию отдельным файлом. Файл остаётся зашифрованным.
+/// Сохраняет копию отдельным файлом. Файл остаётся зашифрованным. Место выбирают
+/// в диалоге, который открывает сам Rust: путь для записи не приходит из окна, и
+/// окно не может перезаписать произвольный файл. `false` — диалог закрыли.
 #[tauri::command]
-pub fn export_backup(
+pub async fn export_backup<R: Runtime>(
+    app: AppHandle<R>,
     state: State<'_, AppState>,
     path: Option<String>,
     id: String,
-    to: String,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     let store = store_for(&state.lock(), path)?;
-    store.export(&id, Path::new(&to)).map_err(io_error)
+    run_blocking(move || {
+        let chosen = app
+            .dialog()
+            .file()
+            .set_title("Сохранить копию как файл")
+            .set_file_name(&id)
+            .add_filter("Хранилище mdpass", &["age", "md"])
+            .blocking_save_file();
+        let Some(chosen) = chosen else { return Ok(false) };
+        let to = chosen.into_path().map_err(|err| CommandError::Io { message: err.to_string() })?;
+        store.export(&id, &to).map_err(io_error)?;
+        Ok(true)
+    })
+    .await
 }
 
 /// Где лежат копии открытого хранилища: для строки в настройках.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn backups_location(state: State<'_, AppState>) -> Result<String, CommandError> {
     let session = state.lock();
     let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;

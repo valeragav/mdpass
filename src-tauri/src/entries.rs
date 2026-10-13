@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use zeroize::Zeroizing;
 
-use crate::backups::no_backup;
+use crate::backups::{BackupPolicy, no_backup};
 use crate::commands::{CommandError, run_blocking};
 use crate::session::{AppState, Session};
 
@@ -85,20 +85,20 @@ fn field_key(session: &Session, entry_id: u64, field: usize) -> Result<String, C
     Ok(entry.fields.get(field).ok_or(CommandError::EntryNotFound)?.key.clone())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn entries(state: State<'_, AppState>) -> Result<Vec<EntryView>, CommandError> {
     let session = state.lock();
     let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
     Ok(vault.document().entries().iter().map(EntryView::from).collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reveal_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> Result<String, CommandError> {
     let value = field_value(&state.lock(), entry_id, field)?;
     Ok(value.as_str().to_owned())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn copy_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> Result<(), CommandError> {
     let session = state.lock();
     let value = clipboard_text(&field_key(&session, entry_id, field)?, field_value(&session, entry_id, field)?);
@@ -184,6 +184,17 @@ pub(crate) fn edit<T>(
     change: impl FnOnce(&mut Document) -> Result<T, FormatError>,
 ) -> Result<T, CommandError> {
     let policy = session.backup_policy();
+    edit_with(session, policy, kind, change)
+}
+
+/// Как `edit`, но с заданным правилом копий: например, восстановление делает копию
+/// всегда, даже если копии выключены, — иначе его нельзя было бы отменить.
+pub(crate) fn edit_with<T>(
+    session: &mut Session,
+    policy: Option<BackupPolicy>,
+    kind: BackupKind,
+    change: impl FnOnce(&mut Document) -> Result<T, FormatError>,
+) -> Result<T, CommandError> {
     let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
     let before = vault.document().clone();
     let result = change(vault.document_mut())?;
@@ -288,7 +299,7 @@ pub async fn move_section(
     .await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn generate_password(length: Option<usize>) -> String {
     password::generate(length.unwrap_or(password::DEFAULT_LENGTH)).as_str().to_owned()
 }

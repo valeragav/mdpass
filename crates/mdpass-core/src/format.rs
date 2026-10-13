@@ -111,7 +111,7 @@ impl Favorite {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Entry {
     pub id: EntryId,
     /// Названия разделов от верхнего к нижнему.
@@ -122,6 +122,22 @@ pub struct Entry {
     pub favorite: Favorite,
     /// Строки записи, которые не похожи на поле «ключ: значение».
     pub extra: Vec<String>,
+}
+
+/// Свободные строки записи бывают секретами, поэтому в отладочный вывод попадает
+/// только их число.
+impl fmt::Debug for Entry {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Entry")
+            .field("id", &self.id)
+            .field("path", &self.path)
+            .field("title", &self.title)
+            .field("fields", &self.fields)
+            .field("tags", &self.tags)
+            .field("favorite", &self.favorite)
+            .field("extra", &format_args!("<строк: {}>", self.extra.len()))
+            .finish()
+    }
 }
 
 /// Данные записи для добавления или изменения.
@@ -149,6 +165,8 @@ pub enum FormatError {
     IntoItself,
     /// В целевом разделе уже есть раздел с таким названием.
     SectionExists(String),
+    /// Название раздела не прочитается обратно таким же, например `C #`.
+    InvalidSection(String),
 }
 
 impl fmt::Display for FormatError {
@@ -167,6 +185,9 @@ impl fmt::Display for FormatError {
             Self::NotFound => write!(f, "Запись не найдена"),
             Self::IntoItself => write!(f, "Раздел нельзя перенести внутрь самого себя"),
             Self::SectionExists(title) => write!(f, "Здесь уже есть раздел «{title}»"),
+            Self::InvalidSection(title) => {
+                write!(f, "Название раздела «{title}» не может кончаться решёткой через пробел")
+            }
         }
     }
 }
@@ -408,7 +429,8 @@ impl Document {
     }
 
     /// Добавляет запись в избранное или убирает из него. Остальное в записи не меняется.
-    /// Новая избранная запись встаёт в конец списка.
+    /// Новая избранная запись получает номер после последнего: встаёт за записями
+    /// с номерами, но перед записями `favorite: true`.
     pub fn set_favorite(&mut self, id: EntryId, favorite: bool) -> Result<(), FormatError> {
         let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
         let last = self.nodes.iter().filter_map(|node| match node {
@@ -419,7 +441,7 @@ impl Document {
             _ => None,
         });
         let next = match last.max() {
-            Some(n) => Favorite::At(n + 1),
+            Some(n) => Favorite::At(n.saturating_add(1)),
             None => Favorite::Yes,
         };
         if let Node::Entry(entry) = &mut self.nodes[index]
@@ -431,14 +453,29 @@ impl Document {
         Ok(())
     }
 
-    /// Порядок избранного: записи получают номера 1, 2, 3… в порядке `ids`.
-    /// Меняются только записи, у которых номер стал другим.
+    /// Порядок избранного: записи получают номера 1, 2, 3… в порядке `ids`. Повторы
+    /// в `ids` не учитываются. Другие записи с номерами идут следом в прежнем порядке,
+    /// чтобы номера не совпали. Меняются только записи, у которых номер стал другим.
     pub fn order_favorites(&mut self, ids: &[EntryId]) -> Result<(), FormatError> {
-        let indexes: Vec<usize> =
-            ids.iter().map(|&id| self.entry_index(id).ok_or(FormatError::NotFound)).collect::<Result<_, _>>()?;
+        let mut indexes: Vec<usize> = Vec::with_capacity(ids.len());
+        for &id in ids {
+            let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+            if !indexes.contains(&index) {
+                indexes.push(index);
+            }
+        }
+        let mut rest: Vec<(u32, usize)> = (0..self.nodes.len())
+            .filter(|i| !indexes.contains(i))
+            .filter_map(|i| match &self.nodes[i] {
+                Node::Entry(EntryNode { favorite: Favorite::At(n), .. }) => Some((*n, i)),
+                _ => None,
+            })
+            .collect();
+        rest.sort_by_key(|&(n, _)| n);
+        indexes.extend(rest.into_iter().map(|(_, i)| i));
         for (place, index) in indexes.into_iter().enumerate() {
             let Node::Entry(entry) = &mut self.nodes[index] else { unreachable!() };
-            let favorite = Favorite::At(place as u32 + 1);
+            let favorite = Favorite::At(u32::try_from(place).unwrap_or(u32::MAX - 1) + 1);
             if entry.favorite != favorite {
                 entry.favorite = favorite;
                 entry.raw = None;
@@ -787,13 +824,28 @@ enum FieldLine {
     Favorite(Favorite),
 }
 
+/// Похожа ли строка на поле «ключ: значение». Так же решает импорт, какие строки
+/// дописать пробелом после двоеточия.
+pub(crate) fn is_field_line(line: &str) -> bool {
+    parse_field(line).is_some()
+}
+
 fn parse_field(line: &str) -> Option<FieldLine> {
     let colon = line.find(':')?;
     let key = &line[..colon];
     if key.is_empty() || key.contains(char::is_whitespace) {
         return None;
     }
-    let value = line[colon + 1..].trim();
+    let rest = &line[colon + 1..];
+    // Ссылка, путь Windows или время — не поле: `https://site`, `C:\keys`, `10:30 звонок`.
+    // С пробелом после двоеточия (`url: https://…`) это обычное поле.
+    let glued = rest.starts_with(|c: char| !c.is_whitespace());
+    let drive = key.len() == 1 && key.chars().all(|c| c.is_ascii_alphabetic()) && rest.starts_with('/');
+    let digits = key.chars().all(|c| c.is_ascii_digit());
+    if glued && (rest.starts_with("//") || rest.starts_with('\\') || drive || digits) {
+        return None;
+    }
+    let value = rest.trim();
     if key.eq_ignore_ascii_case(TAGS_KEY) {
         return Some(FieldLine::Tags(parse_tags(value)));
     }
@@ -809,7 +861,9 @@ fn parse_field(line: &str) -> Option<FieldLine> {
         Some(key) => (key, true),
         None => (key, false),
     };
-    if key.is_empty() {
+    // Ключ, который нельзя записать обратно полем (`#x`, `a!!`, `tags!`), остаётся строкой
+    // текста: иначе запись с ним не сохранилась бы после правки.
+    if !is_valid_key(key) {
         return None;
     }
     Some(FieldLine::Field(Field {
@@ -958,6 +1012,10 @@ fn normalize_path(parts: Vec<String>) -> Result<Vec<String>, FormatError> {
         }
         if part.contains(['\n', '\r']) {
             return Err(FormatError::LineBreakInName);
+        }
+        // `C #` записался бы как `# C #` и прочитался обратно как `C`.
+        if heading_of(&format!("# {part}")).map(|(_, title)| title) != Some(part.to_string()) {
+            return Err(FormatError::InvalidSection(part.to_string()));
         }
         path.push(part.to_string());
     }
