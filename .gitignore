@@ -29,3 +29,8 @@ dist-ssr
 # Playwright
 /test-results/
 /playwright-report/
+
+# Хранилища, созданные для проверки в папке проекта (docs/setup.md), и их следы
+*.md.age
+*.damaged-*
+.mdpass-*.tmp

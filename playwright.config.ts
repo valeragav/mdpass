@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
+// @ts-expect-error type error without @types/node package
+import process from "node:process";
 
 // Тесты интерфейса в невидимом браузере. Команды Rust заменяет заглушка src/dev/mock.ts,
 // поэтому здесь проверяются экраны и сценарии, а не шифрование и файлы: их проверяют

@@ -16,5 +16,5 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["svelte", "vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.svelte"]
+  "include": ["src/**/*.ts", "src/**/*.svelte", "tests/**/*.ts", "playwright.config.ts", "docs/demo/**/*.ts"]
 }
