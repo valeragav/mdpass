@@ -29,6 +29,8 @@ pub struct AppConfig {
     pub text_size: TextSize,
     /// Цвет акцента интерфейса, `#RRGGBB`.
     pub accent: String,
+    /// Ширина списка записей слева, в пикселях.
+    pub sidebar_width: u32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -61,9 +63,13 @@ impl Default for AppConfig {
             theme: Theme::Dark,
             text_size: TextSize::M,
             accent: "#E5A93D".into(),
+            sidebar_width: SIDEBAR_WIDTH.1,
         }
     }
 }
+
+/// Ширина списка слева: самая узкая, по умолчанию и самая широкая.
+pub const SIDEBAR_WIDTH: (u32, u32, u32) = (220, 320, 640);
 
 /// Сколько недавних хранилищ помнить.
 pub const RECENT_LIMIT: usize = 5;
@@ -111,6 +117,7 @@ impl AppConfig {
         self.recent_vaults = recent;
         self.auto_lock_minutes = self.auto_lock_minutes.min(24 * 60);
         self.clipboard_clear_seconds = self.clipboard_clear_seconds.min(60 * 60);
+        self.sidebar_width = self.sidebar_width.clamp(SIDEBAR_WIDTH.0, SIDEBAR_WIDTH.2);
         let valid_accent = self.accent.len() == 7
             && self.accent.starts_with('#')
             && self.accent[1..].chars().all(|c| c.is_ascii_hexdigit());

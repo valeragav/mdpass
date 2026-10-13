@@ -11,7 +11,7 @@
 <script lang="ts">
   import { onDestroy } from "svelte";
   import { api, errorText, type EntryView } from "../../lib/api";
-  import { go } from "../../lib/nav.svelte";
+  import { app, go } from "../../lib/nav.svelte";
   import { showToast } from "../../lib/toast.svelte";
   import Button from "../../lib/ui/Button.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
@@ -281,6 +281,73 @@
     }
   }
 
+  // ---- Ширина панели ------------------------------------------------------
+  // Правый край панели тянется мышью; ←/→ на нём меняют ширину с клавиатуры,
+  // двойной щелчок возвращает обычную. Ширина сохраняется в настройках приложения.
+
+  const WIDTH = { min: 220, normal: 320, max: 640, step: 16 };
+  // Справа от панели должно оставаться место для записи.
+  const RIGHT_MIN = 400;
+
+  let width = $state(app.settings.sidebarWidth);
+  let resizing = $state(false);
+  // Настройки приходят от Rust позже, чем рисуется панель.
+  $effect(() => {
+    const saved = app.settings.sidebarWidth;
+    if (!resizing) width = saved;
+  });
+
+  const clampWidth = (w: number) =>
+    Math.round(Math.max(WIDTH.min, Math.min(w, WIDTH.max, window.innerWidth - RIGHT_MIN)));
+
+  async function saveWidth() {
+    if (width === app.settings.sidebarWidth) return;
+    const before = app.settings;
+    app.settings = { ...before, sidebarWidth: width };
+    try {
+      app.settings = await api.updateSettings(app.settings);
+    } catch (err) {
+      app.settings = before;
+      showToast(errorText(err));
+    }
+  }
+
+  function startResize(event: PointerEvent) {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    resizing = true;
+    const startX = event.clientX;
+    const startWidth = width;
+    const move = (e: PointerEvent) => (width = clampWidth(startWidth + e.clientX - startX));
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      resizing = false;
+      void saveWidth();
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
+  function onResizeKey(event: KeyboardEvent) {
+    const delta = { ArrowLeft: -WIDTH.step, ArrowRight: WIDTH.step }[event.key];
+    if (delta === undefined && event.key !== "Home" && event.key !== "End") return;
+    // Иначе стрелки заодно ушли бы в список записей.
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.key === "Home") width = clampWidth(WIDTH.min);
+    else if (event.key === "End") width = clampWidth(WIDTH.max);
+    else width = clampWidth(width + delta!);
+    void saveWidth();
+  }
+
+  function resetWidth() {
+    width = clampWidth(WIDTH.normal);
+    void saveWidth();
+  }
+
   // ---- Перетаскивание ----------------------------------------------------
   // Сделано на событиях указателя: HTML5 drag-and-drop в окне Tauri на Windows
   // перехватывает само окно.
@@ -460,7 +527,22 @@
 
 <svelte:window onkeydown={onKey} />
 
-<aside class:dragging={dragging !== null}>
+<aside class:dragging={dragging !== null} class:resizing style:width="{width}px">
+  <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+  <div
+    class="resizer"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Ширина списка записей"
+    aria-valuemin={WIDTH.min}
+    aria-valuemax={WIDTH.max}
+    aria-valuenow={width}
+    title="Потяните, чтобы изменить ширину. Двойной щелчок — обычная ширина"
+    tabindex="0"
+    onpointerdown={startResize}
+    ondblclick={resetWidth}
+    onkeydown={onResizeKey}
+  ></div>
   <div class="top">
     <div class="search">
       <Icon name="search" color="var(--text-subtle)" />
@@ -647,13 +729,37 @@
 
 <style>
   aside {
-    width: 320px;
+    position: relative;
     flex: none;
     display: flex;
     flex-direction: column;
     min-height: 0;
     background: var(--bg-chrome);
     border-right: 1px solid var(--line);
+  }
+
+  /* Правый край панели: за него тянут ширину. Шире видимой линии, чтобы легко попасть. */
+  .resizer {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    bottom: 0;
+    width: 8px;
+    z-index: 5;
+    cursor: col-resize;
+    touch-action: none;
+  }
+
+  .resizer:hover,
+  .resizer:focus-visible,
+  aside.resizing .resizer {
+    background: linear-gradient(to right, transparent 3px, var(--accent) 3px, var(--accent) 5px, transparent 5px);
+    outline: none;
+  }
+
+  aside.resizing {
+    cursor: col-resize;
+    user-select: none;
   }
 
   aside.dragging {

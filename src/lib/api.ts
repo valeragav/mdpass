@@ -24,6 +24,8 @@ export interface Settings {
   theme: "dark" | "light" | "system";
   textSize: "s" | "m" | "l";
   accent: string;
+  /// Ширина списка записей слева, в пикселях: от 220 до 640.
+  sidebarWidth: number;
 }
 
 export interface Status {

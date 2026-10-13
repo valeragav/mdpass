@@ -18,6 +18,7 @@ pub struct Settings {
     pub theme: Theme,
     pub text_size: TextSize,
     pub accent: String,
+    pub sidebar_width: u32,
 }
 
 impl From<&AppConfig> for Settings {
@@ -31,6 +32,7 @@ impl From<&AppConfig> for Settings {
             theme: config.theme,
             text_size: config.text_size,
             accent: config.accent.clone(),
+            sidebar_width: config.sidebar_width,
         }
     }
 }
@@ -45,6 +47,7 @@ impl Settings {
         config.theme = self.theme;
         config.text_size = self.text_size;
         config.accent = self.accent;
+        config.sidebar_width = self.sidebar_width;
     }
 }
 

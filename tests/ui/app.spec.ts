@@ -154,6 +154,38 @@ test("стрелки ходят по списку и полям, Ctrl+C копи
   await expect(favorites.getByRole("button", { name: /web-01/ })).toContainClass("on");
 });
 
+test("ширина списка слева меняется и запоминается", async ({ page }) => {
+  await unlock(page);
+  const aside = page.locator("aside");
+  const resizer = page.getByRole("separator", { name: "Ширина списка записей" });
+  expect((await aside.boundingBox())!.width).toBe(320);
+
+  // Мышью: край на 100 пикселей правее.
+  const box = (await resizer.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + 200);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 100, box.y + 200, { steps: 6 });
+  await page.mouse.up();
+  expect((await aside.boundingBox())!.width).toBe(420);
+
+  // Ширина сохраняется: после настроек панель такая же.
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Назад" }).click();
+  expect((await aside.boundingBox())!.width).toBe(420);
+
+  // С клавиатуры: ← уже на 16, стрелки не уходят в список записей.
+  await resizer.focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(resizer).toHaveAttribute("aria-valuenow", "404");
+  await expect(page.getByRole("heading", { name: "web-01 (прод)" })).toBeVisible();
+  // Уже самой узкой не бывает.
+  await page.keyboard.press("Home");
+  await expect(resizer).toHaveAttribute("aria-valuenow", "220");
+
+  await resizer.dblclick();
+  await expect(resizer).toHaveAttribute("aria-valuenow", "320");
+});
+
 test("стрелки доходят до «Свернуть все» между избранным и разделами", async ({ page }) => {
   await unlock(page);
   const work = sidebar(page).getByRole("button", { name: "work", exact: true });

@@ -136,6 +136,7 @@ let settings = {
   theme: "dark",
   textSize: "m",
   accent: "#E5A93D",
+  sidebarWidth: 320,
 };
 let lastVault: string | null = `${HOME}/Documents/vault.md.age`;
 let retryUntil = 0;
@@ -347,6 +348,7 @@ mockIPC(
     }
     case "update_settings":
       settings = (args as { settings: typeof settings }).settings;
+      settings.sidebarWidth = Math.min(640, Math.max(220, settings.sidebarWidth));
       return settings;
     case "lock":
       unlocked = false;

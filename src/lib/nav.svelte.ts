@@ -52,6 +52,7 @@ export const app = $state<AppState>({
     theme: "dark",
     textSize: "m",
     accent: "#E5A93D",
+    sidebarWidth: 320,
   },
 });
 

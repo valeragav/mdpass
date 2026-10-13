@@ -57,3 +57,16 @@ fn hand_edited_values_are_brought_into_range() {
     assert_eq!(config.accent, AppConfig::default().accent);
     assert_eq!(config.auto_lock_minutes, 24 * 60);
 }
+
+#[test]
+fn sidebar_width_stays_in_range() {
+    let dir = TempDir::new().unwrap();
+    let path = dir.path().join("config.json");
+    fs::write(&path, r#"{"sidebar_width": 5000}"#).unwrap();
+    assert_eq!(AppConfig::load(&path).sidebar_width, 640);
+    fs::write(&path, r#"{"sidebar_width": 10}"#).unwrap();
+    assert_eq!(AppConfig::load(&path).sidebar_width, 220);
+    // В настройках старой версии ширины нет: берётся обычная.
+    fs::write(&path, r#"{"auto_lock_minutes": 5}"#).unwrap();
+    assert_eq!(AppConfig::load(&path).sidebar_width, 320);
+}
