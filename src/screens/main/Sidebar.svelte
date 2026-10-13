@@ -33,7 +33,9 @@
   // Строки избранного: заголовок (если список длинный) и записи.
   type FavHeadRow = { kind: "fav-head"; key: string };
   type FavRow = { kind: "fav"; key: string; entry: EntryView };
-  type NavRow = Row | FavHeadRow | FavRow;
+  // Кнопка «Свернуть все» над разделами.
+  type FoldersRow = { kind: "folders"; key: string };
+  type NavRow = Row | FavHeadRow | FavRow | FoldersRow;
 
   const pathKey = (path: string[]) => path.join("\u0000");
   const startsWith = (path: string[], prefix: string[]) => prefix.every((part, i) => path[i] === part);
@@ -87,10 +89,21 @@
     favoritesLong && !favoritesOpen ? favorites.slice(0, FAVORITES_SHOWN) : favorites,
   );
 
-  // Все строки, по которым ходят стрелки: сначала избранное, потом разделы и записи.
+  // Все разделы списка разом: свернуть или, если уже все свёрнуты, развернуть.
+  let groupKeys = $derived([...new Set(rows.filter((r) => r.kind === "group").map((r) => pathKey(r.path)))]);
+  let allCollapsed = $derived(groupKeys.length > 0 && groupKeys.every((key) => collapsed.has(key)));
+
+  function toggleAll() {
+    if (allCollapsed) collapsed.clear();
+    else for (const key of groupKeys) collapsed.add(key);
+  }
+
+  // Все строки, по которым ходят стрелки: сначала избранное, потом «Свернуть все»,
+  // разделы и записи. Во время поиска кнопка недоступна, и стрелки её пропускают.
   let navRows = $derived<NavRow[]>([
     ...(favoritesLong ? [{ kind: "fav-head", key: "fav-head" } as const] : []),
     ...favoritesShown.map((entry) => ({ kind: "fav", key: `f:${entry.id}`, entry }) as const),
+    ...(groupKeys.length > 0 && !filtering ? [{ kind: "folders", key: "folders" } as const] : []),
     ...shown,
   ]);
 
@@ -98,7 +111,9 @@
   // Курсор списка — это выбранная строка: запись или раздел. Избранная запись есть
   // и в избранном, и в разделе, поэтому отдельно помним, где из двух стоит курсор.
 
-  let cursorIn = $state<"list" | "fav" | "fav-head">("list");
+  let cursorIn = $state<"list" | "fav" | "fav-head" | "folders">("list");
+  // Курсор на кнопке, а не на записи или разделе.
+  let onButton = $derived(cursorIn === "fav-head" || cursorIn === "folders");
 
   // Курсор в избранном, только пока выбранная запись там видна. Иначе он в разделе.
   let favCursor = $derived(
@@ -108,25 +123,20 @@
   function isCurrent(row: NavRow): boolean {
     switch (row.kind) {
       case "fav-head":
-        return cursorIn === "fav-head";
+      case "folders":
+        return cursorIn === row.kind;
       case "fav":
         return favCursor && row.entry.id === vault.selectedId;
       case "group":
-        return (
-          cursorIn !== "fav-head" &&
-          vault.selectedSection !== null &&
-          pathKey(vault.selectedSection) === pathKey(row.path)
-        );
+        return !onButton && vault.selectedSection !== null && pathKey(vault.selectedSection) === pathKey(row.path);
       case "entry":
-        return (
-          cursorIn !== "fav-head" && !favCursor && vault.selectedSection === null && row.entry.id === vault.selectedId
-        );
+        return !onButton && !favCursor && vault.selectedSection === null && row.entry.id === vault.selectedId;
     }
   }
 
   function select(row: NavRow | undefined) {
     if (!row) return;
-    if (row.kind === "fav-head") cursorIn = "fav-head";
+    if (row.kind === "fav-head" || row.kind === "folders") cursorIn = row.kind;
     else if (row.kind === "group") {
       cursorIn = "list";
       vault.selectedSection = row.path;
@@ -160,7 +170,8 @@
 
   // ↑ ↓ — по строкам, → или Enter — перейти вправо: к полям записи или в список раздела,
   // ← — свернуть раздел или подняться к разделу. Избранное идёт первым: у его заголовка
-  // → раскрывает весь список, ← сворачивает, Enter переключает.
+  // → раскрывает весь список, ← сворачивает, Enter переключает. На «Свернуть все»
+  // → разворачивает все разделы, ← сворачивает, Enter переключает.
   function onKey(event: KeyboardEvent) {
     if (moveFavoriteByKey(event)) return;
     if (keyNav.zone !== "list" || !isNavKey(event) || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -170,7 +181,7 @@
     const open = row?.kind === "group" && (filtering || !collapsed.has(pathKey(row.path)));
     const parent = (): NavRow | undefined => {
       if (row.kind === "fav") return navRows.find((r) => r.kind === "fav-head");
-      if (row.kind === "fav-head") return undefined;
+      if (row.kind === "fav-head" || row.kind === "folders") return undefined;
       const path = row.kind === "group" ? row.path.slice(0, -1) : row.entry.path;
       for (let i = at - 1; i >= 0; i--) {
         const r = navRows[i];
@@ -199,6 +210,9 @@
         if (!row) select(navRows[0]);
         else if (row.kind === "fav-head") {
           if (event.key === "Enter" || !favoritesOpen) favoritesOpen = !favoritesOpen;
+        } else if (row.kind === "folders") {
+          if (event.key === "Enter") toggleAll();
+          else collapsed.clear();
         } else {
           // У раздела — в его список справа; свёрнутый заодно раскрывается.
           if (row.kind === "group" && !open) toggle(row);
@@ -208,6 +222,7 @@
       case "ArrowLeft":
         if (!row) return;
         if (row.kind === "fav-head") favoritesOpen = false;
+        else if (row.kind === "folders") for (const key of groupKeys) collapsed.add(key);
         else if (row.kind === "group" && open && !filtering) toggle(row);
         else select(parent());
         break;
@@ -216,15 +231,6 @@
         return;
     }
     event.preventDefault();
-  }
-
-  // Все разделы списка разом: свернуть или, если уже все свёрнуты, развернуть.
-  let groupKeys = $derived([...new Set(rows.filter((r) => r.kind === "group").map((r) => pathKey(r.path)))]);
-  let allCollapsed = $derived(groupKeys.length > 0 && groupKeys.every((key) => collapsed.has(key)));
-
-  function toggleAll() {
-    if (allCollapsed) collapsed.clear();
-    else for (const key of groupKeys) collapsed.add(key);
   }
 
   let tagChips = $derived.by(() => {
@@ -485,20 +491,11 @@
         {/each}
       </div>
     {/if}
-    {#if tagsOverflow || tagsOpen || groupKeys.length > 0}
+    {#if tagsOverflow || tagsOpen}
       <div class="tools">
-        {#if tagsOverflow || tagsOpen}
-          <button type="button" class="link" aria-expanded={tagsOpen} onclick={() => (tagsOpen = !tagsOpen)}>
-            {tagsOpen ? "Свернуть теги" : `Все теги (${tagChips.length})`}
-          </button>
-        {/if}
-        {#if groupKeys.length > 0}
-          <!-- Во время поиска разделы всегда раскрыты, поэтому кнопка не нужна. -->
-          <button type="button" class="link folders" disabled={filtering} onclick={toggleAll}>
-            <Icon name="chevron" size={12} stroke={2} />
-            {allCollapsed ? "Развернуть все" : "Свернуть все"}
-          </button>
-        {/if}
+        <button type="button" class="link" aria-expanded={tagsOpen} onclick={() => (tagsOpen = !tagsOpen)}>
+          {tagsOpen ? "Свернуть теги" : `Все теги (${tagChips.length})`}
+        </button>
       </div>
     {/if}
   </div>
@@ -553,6 +550,27 @@
       </nav>
     {/if}
     <nav aria-label="Записи">
+      {#if groupKeys.length > 0}
+        <!-- Кнопка над разделами, к которым относится. Во время поиска разделы
+             всегда раскрыты, поэтому она недоступна. -->
+        <div class="sections-tools">
+          <button
+            type="button"
+            class="link folders"
+            class:on={cursorIn === "folders"}
+            data-nav="folders"
+            disabled={filtering}
+            onclick={() => {
+              keyNav.zone = "list";
+              cursorIn = "folders";
+              toggleAll();
+            }}
+          >
+            <Icon name="chevron" size={12} stroke={2} />
+            {allCollapsed ? "Развернуть все" : "Свернуть все"}
+          </button>
+        </div>
+      {/if}
       {#if empty}
         <p class="none">Записей пока нет</p>
       {:else if visible.length === 0}
@@ -699,6 +717,12 @@
     margin-top: -4px;
   }
 
+  .sections-tools {
+    display: flex;
+    justify-content: flex-end;
+    padding: 4px 2px 0;
+  }
+
   .link {
     font-size: 12px;
     color: var(--accent);
@@ -717,6 +741,13 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
+  }
+
+  /* Курсор стрелок на кнопке */
+  .folders.on {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
   }
 
   .chip {

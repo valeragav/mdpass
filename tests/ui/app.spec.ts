@@ -154,6 +154,40 @@ test("стрелки ходят по списку и полям, Ctrl+C копи
   await expect(favorites.getByRole("button", { name: /web-01/ })).toContainClass("on");
 });
 
+test("стрелки доходят до «Свернуть все» между избранным и разделами", async ({ page }) => {
+  await unlock(page);
+  const work = sidebar(page).getByRole("button", { name: "work", exact: true });
+  const folders = sidebar(page).getByRole("button", { name: /Свернуть все|Развернуть все/ });
+
+  // Home — первая избранная запись, через две строки — кнопка.
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(folders).toContainClass("on");
+  await expect(work).not.toContainClass("on");
+
+  await page.keyboard.press("ArrowLeft");
+  await expect(folders).toHaveText(/Развернуть все/);
+  await expect(work).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("ArrowRight");
+  await expect(folders).toHaveText(/Свернуть все/);
+  await expect(work).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Enter");
+  await expect(folders).toHaveText(/Развернуть все/);
+  await page.keyboard.press("Enter");
+  await expect(folders).toHaveText(/Свернуть все/);
+
+  // ↓ — к первому разделу, ↑ — обратно на кнопку и дальше в избранное.
+  await page.keyboard.press("ArrowDown");
+  await expect(work).toContainClass("on");
+  await page.keyboard.press("ArrowUp");
+  await expect(folders).toContainClass("on");
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByRole("navigation", { name: "Избранное" }).getByRole("button", { name: /почта/ })).toContainClass(
+    "on",
+  );
+});
+
 test("стрелки ходят по избранному и раскрывают длинный список", async ({ page }) => {
   await unlock(page);
   const favorites = page.getByRole("navigation", { name: "Избранное" });
