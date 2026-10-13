@@ -82,10 +82,12 @@
   // найденное и так видно в списке.
   let favorites = $derived(filtering ? [] : favoritesInOrder(vault.entries));
 
-  // Избранное прокручивается в своей области: в ней видно 5 строк, а если раскрыть
-  // стрелкой у заголовка — 10. Высоты областей — в стилях `.fav-scroll`.
+  // Избранное стоит над списком и не уезжает с ним. Прокручивается оно в своей области:
+  // видно 5 строк, а если раскрыть стрелкой у заголовка — 10. Высоты — в стилях `.fav-scroll`.
+  // Стрелки клавиатуры в свёрнутом избранном ходят только по видимым пяти записям.
   const FAVORITES_SHOWN = 5;
   let favoritesLong = $derived(favorites.length > FAVORITES_SHOWN);
+  let favoritesByKeys = $derived(favoritesOpen ? favorites : favorites.slice(0, FAVORITES_SHOWN));
   let favBox: HTMLElement | undefined = $state();
 
   // Все разделы списка разом: свернуть или, если уже все свёрнуты, развернуть.
@@ -101,7 +103,7 @@
   // разделы и записи. Во время поиска кнопка недоступна, и стрелки её пропускают.
   let navRows = $derived<NavRow[]>([
     ...(favoritesLong ? [{ kind: "fav-head", key: "fav-head" } as const] : []),
-    ...favorites.map((entry) => ({ kind: "fav", key: `f:${entry.id}`, entry }) as const),
+    ...favoritesByKeys.map((entry) => ({ kind: "fav", key: `f:${entry.id}`, entry }) as const),
     ...(groupKeys.length > 0 && !filtering ? [{ kind: "folders", key: "folders" } as const] : []),
     ...shown,
   ]);
@@ -145,10 +147,10 @@
       vault.selectedSection = null;
     }
     // Иначе Enter и пробел нажали бы кнопку, на которой раньше щёлкнули мышью.
-    if (document.activeElement instanceof HTMLElement && list?.contains(document.activeElement)) {
+    if (document.activeElement instanceof HTMLElement && aside?.contains(document.activeElement)) {
       document.activeElement.blur();
     }
-    scrollToCursor(() => [...(list?.querySelectorAll<HTMLElement>("[data-nav]") ?? [])].find((el) => el.dataset.nav === row.key));
+    scrollToCursor(() => [...(aside?.querySelectorAll<HTMLElement>("[data-nav]") ?? [])].find((el) => el.dataset.nav === row.key));
   }
 
   let search: HTMLInputElement | undefined = $state();
@@ -175,8 +177,16 @@
     if (moveFavoriteByKey(event)) return;
     if (keyNav.zone !== "list" || !isNavKey(event) || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (navRows.length === 0) return;
-    const at = navRows.findIndex(isCurrent);
-    const row = navRows[at];
+    let at = navRows.findIndex(isCurrent);
+    let row = navRows[at];
+    // Курсор на избранной записи ниже пятой в свёрнутом списке (по ней щёлкнули мышью):
+    // стрелки до неё не доходят, поэтому считаем, что он стоит сразу за пятой.
+    const pastShown = at < 0 && favCursor;
+    if (pastShown) {
+      const entry = favorites.find((e) => e.id === vault.selectedId)!;
+      row = { kind: "fav", key: `f:${entry.id}`, entry };
+      at = navRows.map((r) => r.kind).lastIndexOf("fav");
+    }
     const open = row?.kind === "group" && (filtering || !collapsed.has(pathKey(row.path)));
     const parent = (): NavRow | undefined => {
       if (row.kind === "fav") return navRows.find((r) => r.kind === "fav-head");
@@ -195,8 +205,8 @@
         break;
       case "ArrowUp":
         // С первой строки — в поиск.
-        if (at <= 0) search?.focus();
-        else select(navRows[at - 1]);
+        if (at <= 0 && !pastShown) search?.focus();
+        else select(navRows[pastShown ? at : at - 1]);
         break;
       case "Home":
         select(navRows[0]);
@@ -368,6 +378,7 @@
   const DRAG_THRESHOLD = 6;
 
   let list: HTMLElement | undefined = $state();
+  let aside: HTMLElement | undefined = $state();
   let pending: { dragged: Dragged; label: string; x: number; y: number } | null = null;
   let dragging = $state<{ dragged: Dragged; label: string } | null>(null);
   let pointer = $state({ x: 0, y: 0 });
@@ -529,7 +540,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<aside class:dragging={dragging !== null} class:resizing style:width="{width}px">
+<aside class:dragging={dragging !== null} class:resizing style:width="{width}px" bind:this={aside}>
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div
     class="resizer"
@@ -584,56 +595,56 @@
     {/if}
   </div>
 
-  <div class="list scroll" bind:this={list}>
-    {#if favorites.length > 0}
-      <nav class="favorites" aria-label="Избранное">
-        {#if favoritesLong}
+  {#if favorites.length > 0}
+    <nav class="favorites" aria-label="Избранное">
+      {#if favoritesLong}
+        <button
+          type="button"
+          class="fav-head mono"
+          class:on={cursorIn === "fav-head"}
+          data-nav="fav-head"
+          aria-expanded={favoritesOpen}
+          onclick={() => {
+            keyNav.zone = "list";
+            cursorIn = "fav-head";
+            favoritesOpen = !favoritesOpen;
+          }}
+        >
+          <span class="chevron" class:open={favoritesOpen} aria-hidden="true"
+            ><Icon name="chevron" size={14} stroke={2} /></span
+          >
+          <Icon name="star" size={12} stroke={2} fill="currentColor" />
+          <span class="label">Избранное</span>
+        </button>
+      {:else}
+        <div class="fav-head mono"><Icon name="star" size={12} stroke={2} fill="currentColor" />Избранное</div>
+      {/if}
+      <div class="fav-scroll scroll" class:open={favoritesOpen} bind:this={favBox}>
+        {#each favorites as entry (entry.id)}
           <button
             type="button"
-            class="fav-head mono"
-            class:on={cursorIn === "fav-head"}
-            data-nav="fav-head"
-            aria-expanded={favoritesOpen}
+            class="entry fav {dropClass(`f:${entry.id}`)}"
+            class:on={favCursor && entry.id === vault.selectedId}
+            class:faded={dragging?.dragged.kind === "favorite" && dragging.dragged.entry.id === entry.id}
+            data-nav="f:{entry.id}"
+            data-drop="f:{entry.id}"
+            onpointerdown={(e) => startPress(e, { kind: "favorite", entry }, entry.title)}
             onclick={() => {
+              if (suppressClick) return;
+              vault.selectedId = entry.id;
+              vault.selectedSection = null;
+              cursorIn = "fav";
               keyNav.zone = "list";
-              cursorIn = "fav-head";
-              favoritesOpen = !favoritesOpen;
             }}
           >
-            <span class="chevron" class:open={favoritesOpen} aria-hidden="true"
-              ><Icon name="chevron" size={14} stroke={2} /></span
-            >
-            <Icon name="star" size={12} stroke={2} fill="currentColor" />
-            <span class="label">Избранное</span>
+            <span class="title">{entry.title}</span>
+            <span class="hint mono">{entry.path.join(" / ")}</span>
           </button>
-        {:else}
-          <div class="fav-head mono"><Icon name="star" size={12} stroke={2} fill="currentColor" />Избранное</div>
-        {/if}
-        <div class="fav-scroll scroll" class:open={favoritesOpen} bind:this={favBox}>
-          {#each favorites as entry (entry.id)}
-            <button
-              type="button"
-              class="entry fav {dropClass(`f:${entry.id}`)}"
-              class:on={favCursor && entry.id === vault.selectedId}
-              class:faded={dragging?.dragged.kind === "favorite" && dragging.dragged.entry.id === entry.id}
-              data-nav="f:{entry.id}"
-              data-drop="f:{entry.id}"
-              onpointerdown={(e) => startPress(e, { kind: "favorite", entry }, entry.title)}
-              onclick={() => {
-                if (suppressClick) return;
-                vault.selectedId = entry.id;
-                vault.selectedSection = null;
-                cursorIn = "fav";
-                keyNav.zone = "list";
-              }}
-            >
-              <span class="title">{entry.title}</span>
-              <span class="hint mono">{entry.path.join(" / ")}</span>
-            </button>
-          {/each}
-        </div>
-      </nav>
-    {/if}
+        {/each}
+      </div>
+    </nav>
+  {/if}
+  <div class="list scroll" bind:this={list}>
     <nav aria-label="Записи">
       {#if groupKeys.length > 0}
         <!-- Кнопка над разделами, к которым относится. Во время поиска разделы
@@ -892,9 +903,11 @@
     padding: 0 8px 8px;
   }
 
+  /* Над списком и не прокручивается вместе с ним. */
   .favorites {
+    flex: none;
+    margin: 0 8px 4px;
     padding-bottom: 8px;
-    margin-bottom: 4px;
     border-bottom: 1px solid var(--line);
   }
 
@@ -928,8 +941,9 @@
     overflow-y: auto;
   }
 
+  /* В невысоком окне раскрытое избранное не вытесняет разделы. */
   .fav-scroll.open {
-    max-height: 300px;
+    max-height: min(300px, 40vh);
   }
 
   .entry.fav {

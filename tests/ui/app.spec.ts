@@ -260,6 +260,35 @@ test("стрелки ходят по избранному и раскрываю�
   await page.keyboard.press("End");
   await expect(sidebar(page).locator(".entry.on")).toHaveCount(1);
   await expect(favorites.locator(".on")).toHaveCount(0);
+
+  // Свёрнутое избранное: после пятой записи ↓ уходит к «Свернуть все», шестая пропускается.
+  await page.keyboard.press("Home");
+  await page.keyboard.press("ArrowLeft");
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown");
+  await expect(favorites.locator(".entry.on")).toHaveCount(1);
+  await page.keyboard.press("ArrowDown");
+  await expect(sidebar(page).getByRole("button", { name: /Свернуть все/ })).toContainClass("on");
+  await expect(favorites.getByRole("button", { name: /шестая/ })).not.toContainClass("on");
+
+  // Шестая, выбранная мышью: ↑ ведёт на пятую, ↓ — к «Свернуть все».
+  await favorites.getByRole("button", { name: /шестая/ }).click();
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+  await favorites.getByRole("button", { name: /шестая/ }).click();
+  await page.keyboard.press("ArrowDown");
+  await expect(sidebar(page).getByRole("button", { name: /Свернуть все/ })).toContainClass("on");
+});
+
+test("избранное стоит на месте, пока прокручивается список", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await unlock(page);
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  const top = (await favorites.boundingBox())!.y;
+  await page.locator("aside .list").evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(sidebar(page).getByRole("button", { name: "work", exact: true })).not.toBeInViewport();
+  expect((await favorites.boundingBox())!.y).toBe(top);
+  await expect(favorites).toBeInViewport();
 });
 
 test("новая запись подставляет выбранный раздел и сохраняется", async ({ page }) => {
