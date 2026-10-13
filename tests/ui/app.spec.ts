@@ -291,6 +291,15 @@ test("избранное стоит на месте, пока прокручив
   await expect(favorites).toBeInViewport();
 });
 
+test("правые края избранного и «Свернуть все» на одной линии", async ({ page }) => {
+  await unlock(page);
+  const hint = (await page.locator(".favorites .hint").first().boundingBox())!;
+  const folders = page.locator(".folders");
+  const box = (await folders.boundingBox())!;
+  const padding = await folders.evaluate((el) => parseFloat(getComputedStyle(el).paddingRight));
+  expect(Math.abs(hint.x + hint.width - (box.x + box.width - padding))).toBeLessThan(1);
+});
+
 test("новая запись подставляет выбранный раздел и сохраняется", async ({ page }) => {
   await unlock(page);
   await sidebar(page).getByRole("button", { name: "site", exact: true }).click();

@@ -901,18 +901,26 @@
     min-height: 0;
     overflow-y: auto;
     padding: 0 8px 8px;
+    scrollbar-gutter: stable;
   }
 
   /* Над списком и не прокручивается вместе с ним. */
   .favorites {
     flex: none;
-    margin: 0 8px 4px;
-    padding-bottom: 8px;
+    margin-bottom: 4px;
+  }
+
+  /* Черта под избранным — с отступами, как строки списка. */
+  .favorites::after {
+    content: "";
+    display: block;
+    margin: 8px 8px 0;
     border-bottom: 1px solid var(--line);
   }
 
   .fav-head {
-    width: 100%;
+    width: calc(100% - 16px);
+    margin: 0 8px;
     display: flex;
     align-items: center;
     gap: 6px;
@@ -936,9 +944,13 @@
   }
 
   /* Области избранного: 5 строк по 30px, раскрытая — 10. */
+  /* Полоса прокрутки — у края панели, как у списка разделов, и место под неё есть
+     всегда: так правые края строк избранного и разделов на одной линии. */
   .fav-scroll {
     max-height: 150px;
     overflow-y: auto;
+    padding: 0 8px;
+    scrollbar-gutter: stable;
   }
 
   /* В невысоком окне раскрытое избранное не вытесняет разделы. */
