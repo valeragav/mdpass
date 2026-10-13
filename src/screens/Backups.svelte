@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import {
     api,
     errorText,
@@ -122,12 +122,20 @@
       delete revealed[key];
       return;
     }
+    // Пока копия расшифровывалась, могли выбрать другую: её ответ сюда не пишем.
+    const token = previewToken;
     try {
-      revealed[key] = await api.revealBackupField(selected!.id, change.path, change.title, field.key);
+      const value = await api.revealBackupField(selected!.id, change.path, change.title, field.key);
+      if (token === previewToken) revealed[key] = value;
     } catch (err) {
-      error = errorText(err);
+      if (token === previewToken) error = errorText(err);
     }
   }
+
+  onDestroy(() => {
+    revealed = {};
+    if (!damaged) api.closeBackup().catch(() => {});
+  });
 
   async function copyOld(change: BackupChange, field: FieldChange) {
     try {

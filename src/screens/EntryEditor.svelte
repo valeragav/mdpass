@@ -24,6 +24,10 @@
     shown: boolean;
     /// Номер поля в исходной записи, пока значение секрета не трогали.
     keepFrom: number | null;
+    /// Секрет показали глазом: откуда он и каким пришёл. Пока значение то же, правкой
+    /// это не считается, и в Rust уходит номер поля, а не сам секрет.
+    revealedFrom: number | null;
+    revealedValue: string | null;
   }
 
   const TEMPLATES: { id: string; label: string; fields: [string, boolean][] }[] = [
@@ -42,7 +46,12 @@
     secret,
     shown: false,
     keepFrom,
+    revealedFrom: null,
+    revealedValue: null,
   });
+
+  /// Номер исходного поля, значение которого не меняли: скрытое или только показанное.
+  const kept = (r: Row) => r.keepFrom ?? (r.revealedFrom !== null && r.value === r.revealedValue ? r.revealedFrom : null);
 
   // Поле «note» редактируется отдельным многострочным полем, как в дизайне.
   const noteIndex = entry ? entry.fields.findIndex((f) => f.key.toLowerCase() === "note" && !f.secret) : -1;
@@ -88,7 +97,7 @@
       tags: parseTags(tags),
       favorite,
       note: note.trim(),
-      rows: rows.map((r) => [r.key.trim(), r.keepFrom ?? r.value, r.secret]),
+      rows: rows.map((r) => [r.key.trim(), kept(r) ?? r.value, r.secret]),
     });
   const start = snapshot();
   let dirty = $derived(snapshot() !== start);
@@ -142,6 +151,8 @@
     if (!r.shown && r.keepFrom !== null && entry) {
       try {
         r.value = await api.revealField(entry.id, r.keepFrom);
+        r.revealedFrom = r.keepFrom;
+        r.revealedValue = r.value;
         r.keepFrom = null;
       } catch (err) {
         error = errorText(err);
@@ -209,12 +220,12 @@
   function draft() {
     // Поля без ключа и пустые поля из шаблона в файл не пишутся.
     const fields: FieldInput[] = rows
-      .filter((r) => r.key.trim() && (r.value.trim() || r.keepFrom !== null))
+      .filter((r) => r.key.trim() && (r.value.trim() || kept(r) !== null))
       .map((r) => ({
         key: r.key.trim(),
-        value: r.keepFrom === null ? r.value : null,
+        value: kept(r) === null ? r.value : null,
         secret: r.secret,
-        keepFrom: r.keepFrom,
+        keepFrom: kept(r),
       }));
     if (note.trim()) fields.push({ key: "note", value: note, secret: false, keepFrom: null });
     return { path: parsePath(path), title: title.trim(), tags: parseTags(tags), favorite, fields };
@@ -247,7 +258,8 @@
 
   // Ctrl+S — сохранить, Esc — назад (с вопросом, если есть правки).
   function onKey(event: KeyboardEvent) {
-    if (askLeave || askDelete) return;
+    // Открыт свой или чужой диалог (например, «файл изменён»): Esc и Ctrl+S — его.
+    if (askLeave || askDelete || document.querySelector("dialog[open]")) return;
     const key = event.key.toLowerCase();
     if ((event.ctrlKey || event.metaKey) && (key === "s" || key === "ы")) {
       event.preventDefault();
@@ -382,16 +394,30 @@
                     aria-label="Ключ поля"
                     spellcheck="false"
                   />
-                  <input
-                    class="input mono"
-                    type={r.secret && !r.shown ? "password" : "text"}
-                    value={r.value}
-                    oninput={(e) => setValue(r, e.currentTarget.value)}
-                    placeholder={r.keepFrom !== null ? "•••••••• (без изменений)" : "значение"}
-                    aria-label={`Значение поля ${r.key || "без названия"}`}
-                    autocomplete="off"
-                    spellcheck="false"
-                  />
+                  {#if r.value.includes("\n") && (!r.secret || r.shown)}
+                    <!-- Многострочное значение (ключ PEM, длинная заметка): в однострочном
+                         поле переводы строк пропали бы при сохранении. -->
+                    <textarea
+                      class="input mono multi"
+                      value={r.value}
+                      oninput={(e) => setValue(r, e.currentTarget.value)}
+                      rows={Math.min(8, r.value.split("\n").length)}
+                      aria-label={`Значение поля ${r.key || "без названия"}`}
+                      autocomplete="off"
+                      spellcheck="false"
+                    ></textarea>
+                  {:else}
+                    <input
+                      class="input mono"
+                      type={r.secret && !r.shown ? "password" : "text"}
+                      value={r.value}
+                      oninput={(e) => setValue(r, e.currentTarget.value)}
+                      placeholder={r.keepFrom !== null ? "•••••••• (без изменений)" : "значение"}
+                      aria-label={`Значение поля ${r.key || "без названия"}`}
+                      autocomplete="off"
+                      spellcheck="false"
+                    />
+                  {/if}
                   <div class="field-actions">
                     {#if r.secret}
                       <IconButton icon="generate" label="Сгенерировать пароль" onclick={() => generate(r)} />
@@ -761,6 +787,13 @@
     padding: 0 12px;
     background: var(--bg-chrome);
     font-size: 14px;
+  }
+
+  .field textarea.multi {
+    height: auto;
+    padding: 8px 12px;
+    resize: vertical;
+    white-space: pre;
   }
 
   .field .key {

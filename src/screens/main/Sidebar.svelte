@@ -1,9 +1,4 @@
 <script lang="ts" module>
-  import { SvelteSet } from "svelte/reactivity";
-
-  // Свёрнутые разделы. Живут только в памяти: названия разделов не должны
-  // оставаться на диске в открытом виде.
-  const collapsed = new SvelteSet<string>();
   // Раскрыт ли длинный список избранного.
   let favoritesOpen = $state(false);
 </script>
@@ -16,7 +11,7 @@
   import Button from "../../lib/ui/Button.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
   import { isNavKey, keyNav, scrollToCursor } from "../../lib/keys.svelte";
-  import { entryHint, favoritesInOrder, loadEntries, vault } from "../../lib/vault.svelte";
+  import { collapsed, entryHint, favoritesInOrder, loadEntries, vault } from "../../lib/vault.svelte";
 
   interface Props {
     /// Записи после поиска и фильтра по тегу.
@@ -257,10 +252,17 @@
   let tagsOpen = $state(false);
   let tagsOverflow = $state(false);
 
+  // Не помещаются ли теги, проверяется и при смене ширины панели: в узкой панели
+  // чипы переносятся на третью строку.
   $effect(() => {
     void tagChips.length;
-    if (!tagsBox || tagsOpen) return;
-    tagsOverflow = tagsBox.scrollHeight > tagsBox.clientHeight + 1;
+    const box = tagsBox;
+    if (!box || tagsOpen) return;
+    const measure = () => (tagsOverflow = box.scrollHeight > box.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(box);
+    return () => observer.disconnect();
   });
 
   // Ctrl+Shift+E из любого места главного окна — как щелчок по «Свернуть все».
@@ -280,8 +282,10 @@
     if (keyNav.zone !== "list" || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return false;
     if ((event.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable]")) return false;
-    if (!favCursor) return false;
+    if (!favCursor || document.querySelector("dialog[open]")) return false;
     event.preventDefault();
+    // Прежняя перестановка ещё пишется в файл: новая считалась бы от старого порядка.
+    if (reordering) return true;
     const ids = favorites.map((e) => e.id);
     const from = ids.indexOf(vault.selectedId!);
     const to = from + (event.key === "ArrowUp" ? -1 : 1);
@@ -294,13 +298,18 @@
     return true;
   }
 
+  let reordering = false;
+
   async function saveFavoriteOrder(ids: number[], toast = true) {
+    reordering = true;
     try {
       await api.orderFavorites(ids);
       await loadEntries();
       if (toast) showToast("Порядок избранного изменён");
     } catch (err) {
       showToast(errorText(err));
+    } finally {
+      reordering = false;
     }
   }
 
@@ -312,28 +321,47 @@
   // Справа от панели должно оставаться место для записи.
   const RIGHT_MIN = 400;
 
-  let width = $state(app.settings.sidebarWidth);
-  let resizing = $state(false);
-  // Настройки приходят от Rust позже, чем рисуется панель.
-  $effect(() => {
-    const saved = app.settings.sidebarWidth;
-    if (!resizing) width = saved;
-  });
-
   const clampWidth = (w: number) =>
     Math.round(Math.max(WIDTH.min, Math.min(w, WIDTH.max, window.innerWidth - RIGHT_MIN)));
 
-  async function saveWidth() {
-    if (width === app.settings.sidebarWidth) return;
-    const before = app.settings;
-    app.settings = { ...before, sidebarWidth: width };
-    try {
-      app.settings = await api.updateSettings(app.settings);
-    } catch (err) {
-      app.settings = before;
-      showToast(errorText(err));
-    }
+  let width = $state(clampWidth(app.settings.sidebarWidth));
+  let resizing = $state(false);
+  // Своя ширина ещё не сохранена: ответы на прежние сохранения её не перебивают.
+  let widthPending = false;
+  let widthTimer: ReturnType<typeof setTimeout> | undefined;
+  // Настройки приходят от Rust позже, чем рисуется панель.
+  $effect(() => {
+    const saved = app.settings.sidebarWidth;
+    if (!resizing && !widthPending) width = clampWidth(saved);
+  });
+
+  /// Сохраняет ширину чуть погодя: несколько нажатий ← → подряд — одна запись настроек.
+  function saveWidth() {
+    widthPending = true;
+    clearTimeout(widthTimer);
+    widthTimer = setTimeout(flushWidth, 250);
   }
+
+  async function flushWidth() {
+    widthTimer = undefined;
+    const wanted = width;
+    if (wanted !== app.settings.sidebarWidth) {
+      try {
+        const saved = await api.updateSettings({ ...app.settings, sidebarWidth: wanted });
+        if (width === wanted) app.settings = saved;
+      } catch (err) {
+        showToast(errorText(err));
+      }
+    }
+    if (width === wanted) widthPending = false;
+  }
+
+  // Уходят с экрана раньше, чем прошла пауза: сохраняем сразу.
+  onDestroy(() => {
+    if (widthTimer === undefined) return;
+    clearTimeout(widthTimer);
+    void flushWidth();
+  });
 
   function startResize(event: PointerEvent) {
     if (event.button !== 0) return;

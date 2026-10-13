@@ -30,12 +30,17 @@
     }
   }
 
+  // Флажки переключают быстрее, чем файл разбирается: устаревший ответ не пишем.
+  let refreshToken = 0;
   async function refresh() {
     if (!source) return;
+    const token = ++refreshToken;
     error = null;
     try {
-      preview = await api.analyzeImport(source.path, fixes);
+      const result = await api.analyzeImport(source.path, fixes);
+      if (token === refreshToken) preview = result;
     } catch (err) {
+      if (token !== refreshToken) return;
       preview = null;
       error = errorText(err);
     }

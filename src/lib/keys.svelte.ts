@@ -15,6 +15,12 @@ export function isNavKey(event: KeyboardEvent): boolean {
   if (event.defaultPrevented || event.altKey) return false;
   const el = event.target as HTMLElement | null;
   if (el?.closest("input, textarea, select, [contenteditable]")) return false;
+  // Enter и пробел на кнопке, до которой дошли Tab'ом, нажимают её саму. Строки
+  // списка и поля записи (`data-nav`, `data-cursor`) — часть навигации, их это не касается.
+  const activates = event.key === "Enter" || event.key === " ";
+  if (activates && el?.closest("button, a[href], [role=switch], [role=tab]") && !el.closest("[data-nav], [data-cursor]")) {
+    return false;
+  }
   return document.querySelector("dialog[open]") === null;
 }
 

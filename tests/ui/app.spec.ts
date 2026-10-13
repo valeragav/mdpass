@@ -670,6 +670,89 @@ test("из копии возвращается удалённая запись",
   await expect(router).toHaveCount(0);
 });
 
+// Найдено проверкой: показанный секрет был привязан к номеру поля и переезжал на другое поле.
+test("после правки записи показанный пароль снова скрыт", async ({ page }) => {
+  await unlock(page);
+  await sidebar(page).getByRole("button", { name: /БД каталога/ }).click();
+  await page.getByRole("button", { name: "Показать password" }).click();
+  await expect(page.getByText("hV3$eQ6mJ0cA")).toBeVisible();
+
+  await page.getByRole("button", { name: "Редактировать" }).click();
+  const keys = page.getByLabel("Ключ поля");
+  await keys.nth(2).focus();
+  await page.keyboard.press("Alt+ArrowUp");
+  await page.keyboard.press("Alt+ArrowUp");
+  await expect(keys.nth(0)).toHaveValue("password");
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Изменения сохранены");
+  await expect(page.locator("main .key")).toHaveText(["password", "port", "user"]);
+  await expect(page.getByText("hV3$eQ6mJ0cA")).toHaveCount(0);
+});
+
+// Найдено проверкой: после «Перечитать» записи нумеруются заново, и секрет и выбор
+// переезжали на другую запись.
+test("после перечитывания файла выбрана та же запись, секрет скрыт", async ({ page }) => {
+  await unlock(page);
+  await sidebar(page).getByRole("button", { name: /web-02/ }).click();
+  await page.getByRole("button", { name: "Удалить запись" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Удалить" }).click();
+  await expect(page.getByRole("status")).toContainText("удалена");
+
+  await sidebar(page).getByRole("button", { name: /почта/ }).click();
+  await page.getByRole("button", { name: "Показать password" }).click();
+  await expect(page.getByText("fR9^kL3zVm6q")).toBeVisible();
+
+  // Запись «конфликт» в заглушке изображает файл, изменённый вне приложения.
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("конфликт");
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  await page.getByRole("dialog", { name: "Файл изменён вне приложения" }).getByRole("button", { name: "Перечитать файл" }).click();
+  await expect(page.getByRole("status")).toContainText("Файл перечитан");
+  await page.keyboard.press("Escape");
+  await page.getByRole("button", { name: "Не сохранять" }).click();
+
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+  await expect(page.getByText("fR9^kL3zVm6q")).toHaveCount(0);
+});
+
+test("Enter на кнопке, до которой дошли Tab'ом, нажимает её", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Новая запись" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
+});
+
+test("многострочный ключ правится целиком, показ пароля — не правка", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: /work\.md\.age/ }).click();
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await sidebar(page).getByRole("button", { name: /deploy-ключ/ }).click();
+  await page.getByRole("button", { name: "Редактировать" }).click();
+
+  await page.getByRole("button", { name: "Показать значение" }).click();
+  const value = page.getByLabel("Значение поля private_key");
+  await expect(value).toHaveValue("-----BEGIN KEY-----\nAAAAexample\nBBBBexample\n-----END KEY-----");
+  expect(await value.evaluate((el) => el.tagName)).toBe("TEXTAREA");
+
+  // Только показали: выход без вопроса «Сохранить изменения?».
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("heading", { name: "deploy-ключ" })).toBeVisible();
+});
+
+test("быстрые нажатия на краю списка не теряются", async ({ page }) => {
+  await unlock(page);
+  const resizer = page.getByRole("separator", { name: "Ширина списка записей" });
+  await resizer.focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowLeft");
+  await expect(resizer).toHaveAttribute("aria-valuenow", "272");
+  await page.waitForTimeout(600);
+  await expect(resizer).toHaveAttribute("aria-valuenow", "272");
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Назад" }).click();
+  expect((await page.locator("aside").boundingBox())!.width).toBe(272);
+});
+
 test("файл, изменённый вне приложения, предлагают перечитать", async ({ page }) => {
   await unlock(page);
   await page.getByRole("button", { name: "Новая запись" }).click();

@@ -1,6 +1,9 @@
 // Записи открытого хранилища. Секретные значения здесь появляются только после
-// «показать» и стираются при блокировке.
-import { api, type EntryView } from "./api";
+// «показать» и стираются при блокировке, при перечитывании записей и при смене
+// выбранной записи или раздела.
+import { untrack } from "svelte";
+import { SvelteSet } from "svelte/reactivity";
+import { api, errorText, type EntryView } from "./api";
 import { go } from "./nav.svelte";
 import { showToast } from "./toast.svelte";
 
@@ -16,6 +19,28 @@ interface VaultState {
 
 export const vault = $state<VaultState>({ entries: [], selectedId: null, selectedSection: null, revealed: {} });
 
+/// Свёрнутые разделы. Живут только в памяти: названия разделов не должны оставаться
+/// на диске в открытом виде. Забываются при блокировке.
+export const collapsed = new SvelteSet<string>();
+
+/// Номер «поколения» показанных секретов. Растёт при каждом сбросе: ответ на
+/// «показать», пришедший после сброса, относится к старым данным и отбрасывается.
+let revealEpoch = 0;
+
+function hideSecrets() {
+  revealEpoch++;
+  vault.revealed = {};
+}
+
+// Показанный секрет не переходит на другую запись или раздел.
+$effect.root(() => {
+  $effect(() => {
+    void vault.selectedId;
+    void vault.selectedSection;
+    untrack(hideSecrets);
+  });
+});
+
 /// Раздел для новой записи: выбранный в списке или раздел выбранной записи.
 export function currentSection(): string[] {
   if (vault.selectedSection) return vault.selectedSection;
@@ -25,14 +50,23 @@ export function currentSection(): string[] {
 
 export const revealKey = (entryId: number, field: number) => `${entryId}:${field}`;
 
+const samePlace = (a: EntryView, b: EntryView) => a.title === b.title && a.path.join("\u0000") === b.path.join("\u0000");
+
+/// Перечитывает записи. Номера записей Rust раздаёт заново, когда перечитывает файл
+/// (после «Перечитать» или восстановления копии), поэтому показанные секреты, привязанные
+/// к номерам, сбрасываются, а выбранная запись находится по разделу и названию.
 export async function loadEntries() {
-  vault.entries = await api.entries();
+  const selected = vault.entries.find((e) => e.id === vault.selectedId);
+  const entries = await api.entries();
+  hideSecrets();
+  vault.entries = entries;
   const section = vault.selectedSection;
-  if (section && !vault.entries.some((e) => section.every((part, i) => e.path[i] === part))) {
+  if (section && !entries.some((e) => section.every((part, i) => e.path[i] === part))) {
     vault.selectedSection = null;
   }
-  if (!vault.entries.some((e) => e.id === vault.selectedId)) {
-    vault.selectedId = vault.entries[0]?.id ?? null;
+  const sameId = entries.find((e) => e.id === vault.selectedId);
+  if (!sameId || (selected && !samePlace(sameId, selected))) {
+    vault.selectedId = (selected && entries.find((e) => samePlace(e, selected)))?.id ?? entries[0]?.id ?? null;
   }
 }
 
@@ -40,9 +74,11 @@ export async function toggleReveal(entryId: number, field: number) {
   const key = revealKey(entryId, field);
   if (key in vault.revealed) {
     delete vault.revealed[key];
-  } else {
-    vault.revealed[key] = await api.revealField(entryId, field);
+    return;
   }
+  const epoch = revealEpoch;
+  const value = await api.revealField(entryId, field);
+  if (epoch === revealEpoch) vault.revealed[key] = value;
 }
 
 export async function deleteEntry(entryId: number, title: string) {
@@ -68,15 +104,22 @@ export async function toggleFavorite(entry: EntryView) {
 /// Стирает записи из памяти интерфейса и показывает экран разблокировки.
 export function forgetEntries() {
   vault.entries = [];
-  vault.revealed = {};
+  hideSecrets();
+  collapsed.clear();
   vault.selectedId = null;
   vault.selectedSection = null;
   go("unlock");
 }
 
+/// Блокирует хранилище. Записи из окна стираются, даже если Rust ответил ошибкой.
 export async function lockVault() {
-  await api.lock();
-  forgetEntries();
+  try {
+    await api.lock();
+  } catch (err) {
+    showToast(errorText(err));
+  } finally {
+    forgetEntries();
+  }
 }
 
 /// Поля-заметки показываются отдельно от остальных полей.
