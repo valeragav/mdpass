@@ -18,6 +18,7 @@ export const SHORTCUTS: ShortcutGroup[] = [
       { keys: ["Ctrl+F"], what: "Поиск" },
       { keys: ["Ctrl+N"], what: "Новая запись" },
       { keys: ["Ctrl+L"], what: "Заблокировать хранилище" },
+      { keys: ["Ctrl+Shift+E"], what: "Свернуть или развернуть все разделы" },
     ],
   },
   {

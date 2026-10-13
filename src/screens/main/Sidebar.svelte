@@ -174,6 +174,7 @@
   // → раскрывает весь список, ← сворачивает, Enter переключает. На «Свернуть все»
   // → разворачивает все разделы, ← сворачивает, Enter переключает.
   function onKey(event: KeyboardEvent) {
+    if (toggleAllByKey(event)) return;
     if (moveFavoriteByKey(event)) return;
     if (keyNav.zone !== "list" || !isNavKey(event) || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (navRows.length === 0) return;
@@ -261,6 +262,18 @@
     if (!tagsBox || tagsOpen) return;
     tagsOverflow = tagsBox.scrollHeight > tagsBox.clientHeight + 1;
   });
+
+  // Ctrl+Shift+E из любого места главного окна — как щелчок по «Свернуть все».
+  // Во время поиска кнопка недоступна, и сочетание тоже ничего не делает.
+  function toggleAllByKey(event: KeyboardEvent): boolean {
+    const key = event.key.toLowerCase();
+    if (!(event.ctrlKey || event.metaKey) || !event.shiftKey || event.altKey) return false;
+    if (key !== "e" && key !== "у") return false;
+    if (document.querySelector("dialog[open]")) return false;
+    event.preventDefault();
+    if (groupKeys.length > 0 && !filtering) toggleAll();
+    return true;
+  }
 
   // Alt+↑ / Alt+↓ на избранной записи переносит её выше или ниже в избранном.
   function moveFavoriteByKey(event: KeyboardEvent): boolean {
@@ -647,13 +660,15 @@
   <div class="list scroll" bind:this={list}>
     <nav aria-label="Записи">
       {#if groupKeys.length > 0}
-        <!-- Кнопка над разделами, к которым относится. Во время поиска разделы
-             всегда раскрыты, поэтому она недоступна. -->
+        <!-- Кнопка висит поверх списка в правом верхнем углу: строки не занимает
+             и при прокрутке остаётся на месте. Во время поиска разделы всегда
+             раскрыты, поэтому она недоступна. -->
         <div class="sections-tools">
           <button
             type="button"
             class="link folders"
             class:on={cursorIn === "folders"}
+            title="Ctrl+Shift+E"
             data-nav="folders"
             disabled={filtering}
             onclick={() => {
@@ -830,17 +845,27 @@
     overflow-y: auto;
   }
 
+  /* «Все теги» — посередине между тегами и избранным: снизу у «Избранного» свой отступ
+     внутри строки, поэтому нижнее поле меньше верхнего. */
   .tools {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-top: -4px;
+    margin-top: -1px;
+    margin-bottom: -8px;
   }
 
+  /* Нулевая высота: кнопка свисает из этой строки поверх списка, а sticky держит
+     её у верхнего края, пока список прокручивается. */
   .sections-tools {
+    position: sticky;
+    top: 4px;
+    z-index: 3;
+    height: 0;
     display: flex;
     justify-content: flex-end;
-    padding: 4px 2px 0;
+    /* С полем кнопки справа (9px) текст кончается там же, где подписи строк. */
+    padding-right: 1px;
   }
 
   .link {
@@ -856,18 +881,23 @@
     color: var(--text-faint);
   }
 
+  /* Непрозрачный фон и тень: кнопка читается поверх строк под ней. Рамка — тенью,
+     чтобы не сдвигать правый край текста. */
   .folders {
-    margin-left: auto;
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    padding: 4px 8px;
+    padding: 10px 9px;
     border-radius: 6px;
+    background: var(--bg-chrome);
+    box-shadow:
+      0 0 0 1px var(--line),
+      0 4px 12px rgba(0, 0, 0, 0.25);
   }
 
   /* Курсор стрелок на кнопке */
   .folders.on {
-    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-chrome));
   }
 
   .chip {

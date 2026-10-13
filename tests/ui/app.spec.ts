@@ -291,6 +291,25 @@ test("избранное стоит на месте, пока прокручив
   await expect(favorites).toBeInViewport();
 });
 
+test("«Свернуть все» висит над списком: строки не занимает и не уезжает", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 420 });
+  await unlock(page);
+  const folders = page.getByRole("button", { name: "Свернуть все" });
+  const list = page.locator("aside .list");
+  // Первый раздел начинается у верха списка, как будто кнопки нет.
+  const listTop = (await list.boundingBox())!.y;
+  const work = sidebar(page).getByRole("button", { name: "work", exact: true });
+  expect((await work.boundingBox())!.y - listTop).toBeLessThan(12);
+
+  const y = (await folders.boundingBox())!.y;
+  await list.evaluate((el) => (el.scrollTop = el.scrollHeight));
+  await expect(work).not.toBeInViewport();
+  expect((await folders.boundingBox())!.y).toBe(y);
+  await expect(folders).toBeInViewport();
+  await folders.click();
+  await expect(page.getByRole("button", { name: "Развернуть все" })).toBeVisible();
+});
+
 test("правые края избранного и «Свернуть все» на одной линии", async ({ page }) => {
   await unlock(page);
   const hint = (await page.locator(".favorites .hint").first().boundingBox())!;
@@ -531,6 +550,26 @@ test("горячие клавиши: Ctrl+N открывает новую зап
   await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("heading", { name: "web-01 (прод)" })).toBeVisible();
+});
+
+test("горячие клавиши: Ctrl+Shift+E сворачивает и разворачивает все разделы", async ({ page }) => {
+  await unlock(page);
+  const work = sidebar(page).getByRole("button", { name: "work", exact: true });
+  await page.keyboard.press("Control+Shift+e");
+  await expect(work).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("button", { name: "Развернуть все" })).toBeVisible();
+  await page.keyboard.press("Control+Shift+e");
+  await expect(work).toHaveAttribute("aria-expanded", "true");
+
+  // Работает и из поля поиска, но пока идёт поиск — ничего не делает, как и кнопка.
+  const search = page.getByRole("searchbox", { name: "Поиск" });
+  await search.fill("web");
+  await page.keyboard.press("Control+Shift+e");
+  await expect(work).toHaveAttribute("aria-expanded", "true");
+  await search.fill("");
+  await search.focus();
+  await page.keyboard.press("Control+Shift+e");
+  await expect(work).toHaveAttribute("aria-expanded", "false");
 });
 
 test("хранилище без шифрования создаётся без пароля", async ({ page }) => {
