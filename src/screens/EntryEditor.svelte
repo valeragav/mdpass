@@ -64,6 +64,7 @@
   let path = $state(initial.path);
   let title = $state(initial.title);
   let tags = $state(initial.tags);
+  let favorite = $state(entry?.favorite ?? false);
   let note = $state(initial.note);
   let template = $state(initial.template);
   let rows = $state<Row[]>(
@@ -85,6 +86,7 @@
       path: parsePath(path),
       title: title.trim(),
       tags: parseTags(tags),
+      favorite,
       note: note.trim(),
       rows: rows.map((r) => [r.key.trim(), r.keepFrom ?? r.value, r.secret]),
     });
@@ -93,6 +95,31 @@
 
   let pathChips = $derived([...new Set(vault.entries.map((e) => e.path.join(" / ")).filter(Boolean))].slice(0, 8));
   let canSave = $derived(title.trim().length > 0 && !busy);
+
+  // ---- Подсказки тегов ----------------------------------------------------
+  // Под полем — теги из хранилища, частые первыми. Набранный после последней запятой
+  // кусок сужает список, щелчок по тегу заменяет этот кусок.
+
+  let tagsInput: HTMLInputElement | undefined = $state();
+
+  let knownTags = $derived.by(() => {
+    const counts = new Map<string, number>();
+    for (const e of vault.entries) for (const t of e.tags) counts.set(t, (counts.get(t) ?? 0) + 1);
+    return [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([t]) => t);
+  });
+
+  let tagFragment = $derived(tags.split(",").at(-1)!.trim().replace(/^\[/, "").toLowerCase());
+
+  let tagChips = $derived.by(() => {
+    const chosen = new Set(parseTags(tags));
+    return knownTags.filter((t) => !chosen.has(t) && t.toLowerCase().includes(tagFragment)).slice(0, 12);
+  });
+
+  function addTag(tag: string) {
+    const before = parseTags(tags.split(",").slice(0, -1).join(","));
+    tags = [...before, tag].join(", ") + ", ";
+    tagsInput?.focus();
+  }
 
   function pickTemplate(id: string) {
     const t = TEMPLATES.find((x) => x.id === id)!;
@@ -190,7 +217,7 @@
         keepFrom: r.keepFrom,
       }));
     if (note.trim()) fields.push({ key: "note", value: note, secret: false, keepFrom: null });
-    return { path: parsePath(path), title: title.trim(), tags: parseTags(tags), fields };
+    return { path: parsePath(path), title: title.trim(), tags: parseTags(tags), favorite, fields };
   }
 
   async function save(): Promise<boolean> {
@@ -408,8 +435,31 @@
 
           <div class="group">
             <label for="tags">Теги</label>
-            <input id="tags" class="input mono" bind:value={tags} placeholder="work, server, prod" spellcheck="false" />
+            <input
+              id="tags"
+              class="input mono"
+              bind:this={tagsInput}
+              bind:value={tags}
+              placeholder="work, server, prod"
+              autocomplete="off"
+              spellcheck="false"
+            />
+            {#if tagChips.length > 0}
+              <div class="existing tag-hints">
+                <span>Существующие:</span>
+                {#each tagChips as t (t)}
+                  <button type="button" class="path-chip mono" title="Добавить тег" onclick={() => addTag(t)}>{t}</button>
+                {/each}
+              </div>
+            {/if}
             <span class="note">Через запятую. В файле запишутся как [work], [server]</span>
+          </div>
+
+          <div>
+            <button type="button" class="chip star" class:on={favorite} aria-pressed={favorite} onclick={() => (favorite = !favorite)}>
+              <Icon name="star" fill={favorite ? "currentColor" : "none"} />
+              В избранном
+            </button>
           </div>
 
           <div class="group">
@@ -616,6 +666,16 @@
     color: var(--text-strong);
   }
 
+  .star {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .star.on {
+    color: var(--accent);
+  }
+
   .existing {
     display: flex;
     flex-wrap: wrap;
@@ -624,6 +684,10 @@
     margin-top: -14px;
     font-size: 12px;
     color: var(--text-subtle);
+  }
+
+  .existing.tag-hints {
+    margin-top: 0;
   }
 
   .path-chip {

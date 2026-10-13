@@ -21,6 +21,7 @@ pub struct EntryView {
     path: Vec<String>,
     title: String,
     tags: Vec<String>,
+    favorite: bool,
     fields: Vec<FieldView>,
 }
 
@@ -40,6 +41,7 @@ impl From<&Entry> for EntryView {
             path: entry.path.clone(),
             title: entry.title.clone(),
             tags: entry.tags.clone(),
+            favorite: entry.favorite,
             fields: entry
                 .fields
                 .iter()
@@ -115,6 +117,7 @@ pub struct DraftInput {
     path: Vec<String>,
     title: String,
     tags: Vec<String>,
+    favorite: bool,
     fields: Vec<FieldInput>,
 }
 
@@ -143,7 +146,7 @@ impl DraftInput {
                 Field { key: input.key, value, secret: input.secret }
             })
             .collect();
-        EntryDraft { path: self.path, title: self.title, fields, tags: self.tags }
+        EntryDraft { path: self.path, title: self.title, fields, tags: self.tags, favorite: self.favorite }
     }
 }
 
@@ -198,6 +201,16 @@ pub async fn update_entry(state: State<'_, AppState>, entry_id: u64, draft: Draf
             let current = doc.entry(id).ok_or(FormatError::NotFound)?;
             doc.update(id, draft.into_draft(Some(&current)))
         })
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn set_favorite(state: State<'_, AppState>, entry_id: u64, favorite: bool) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        edit(&mut session, BackupKind::Update, |doc| doc.set_favorite(EntryId::from_raw(entry_id), favorite))
     })
     .await
 }

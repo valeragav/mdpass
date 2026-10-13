@@ -23,6 +23,7 @@ fn draft(title: &str, password: &str) -> EntryDraft {
         title: title.into(),
         fields: vec![Field::new("login", "admin"), Field::new("password", password)],
         tags: vec![],
+        favorite: false,
     }
 }
 

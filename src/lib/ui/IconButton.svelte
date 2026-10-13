@@ -7,14 +7,25 @@
     bordered?: boolean;
     size?: "md" | "sm";
     pressed?: boolean;
+    /// Включённая кнопка-переключатель залита цветом акцента.
+    filled?: boolean;
     onclick?: () => void;
   }
 
-  let { icon, label, bordered = false, size = "md", pressed, onclick }: Props = $props();
+  let { icon, label, bordered = false, size = "md", pressed, filled = false, onclick }: Props = $props();
 </script>
 
-<button type="button" class="icon-btn {size}" class:bordered aria-label={label} aria-pressed={pressed} title={label} {onclick}>
-  <Icon name={icon} size={18} />
+<button
+  type="button"
+  class="icon-btn {size}"
+  class:bordered
+  class:filled
+  aria-label={label}
+  aria-pressed={pressed}
+  title={label}
+  {onclick}
+>
+  <Icon name={icon} size={18} fill={filled ? "currentColor" : "none"} />
 </button>
 
 <style>
@@ -41,5 +52,10 @@
   .icon-btn:hover {
     background: var(--bg-hover-strong);
     color: var(--text);
+  }
+
+  .icon-btn.filled,
+  .icon-btn.filled:hover {
+    color: var(--accent);
   }
 </style>

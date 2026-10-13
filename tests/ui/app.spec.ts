@@ -144,12 +144,56 @@ test("стрелки ходят по списку и полям, Ctrl+C копи
   await page.keyboard.press("ArrowLeft");
 
   // С первой строки ↑ уходит в поиск, ↓ из поиска — обратно в список.
+  // Первая строка — избранное.
   await page.keyboard.press("Home");
   await page.keyboard.press("ArrowUp");
   await expect(page.getByRole("searchbox", { name: "Поиск" })).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await expect(page.getByRole("searchbox", { name: "Поиск" })).not.toBeFocused();
-  await expect(sidebar(page).getByRole("button", { name: "work", exact: true })).toContainClass("on");
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  await expect(favorites.getByRole("button", { name: /web-01/ })).toContainClass("on");
+});
+
+test("стрелки ходят по избранному и раскрывают длинный список", async ({ page }) => {
+  await unlock(page);
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  for (const title of [/web-02/, /БД каталога/, /example\.test/]) {
+    await sidebar(page).getByRole("button", { name: title }).click();
+    await page.getByRole("button", { name: "Добавить в избранное" }).click();
+  }
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("шестая");
+  await page.getByRole("button", { name: "В избранном" }).click();
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  await expect(page.getByRole("status")).toContainText("Запись добавлена");
+
+  // Home — на заголовок избранного, → раскрывает список, ← сворачивает.
+  await page.keyboard.press("Home");
+  const head = favorites.getByRole("button", { name: /Избранное/ });
+  await expect(head).toContainClass("on");
+  await page.keyboard.press("ArrowRight");
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("ArrowLeft");
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await page.keyboard.press("Enter");
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+
+  // ↓ идёт по избранному, курсор подсвечен только там, а не в разделе.
+  await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("heading", { name: "web-01 (прод)" })).toBeVisible();
+  await expect(favorites.getByRole("button", { name: /web-01/ })).toContainClass("on");
+  await expect(sidebar(page).getByRole("button", { name: /web-01/ })).not.toContainClass("on");
+  for (let i = 0; i < 5; i++) await page.keyboard.press("ArrowDown");
+  await expect(page.getByRole("heading", { name: "шестая" })).toBeVisible();
+  await expect(favorites.getByRole("button", { name: /шестая/ })).toContainClass("on");
+
+  // ← из избранного — к заголовку, следующая ↓ после избранного — в разделы.
+  await page.keyboard.press("ArrowLeft");
+  await expect(head).toContainClass("on");
+  // End — на последнюю запись разделов: курсор уходит из избранного.
+  await page.keyboard.press("End");
+  await expect(sidebar(page).locator(".entry.on")).toHaveCount(1);
+  await expect(favorites.locator(".on")).toHaveCount(0);
 });
 
 test("новая запись подставляет выбранный раздел и сохраняется", async ({ page }) => {
@@ -166,6 +210,92 @@ test("новая запись подставляет выбранный разд
   await expect(page.getByRole("status")).toContainText("Запись добавлена");
   await expect(page.getByRole("heading", { name: "gamma" })).toBeVisible();
   await expect(page.getByText("work / site")).toBeVisible();
+});
+
+test("в редакторе под тегами подсказываются существующие", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  const tags = page.getByLabel("Теги");
+  const hints = page.locator(".tag-hints button");
+  await expect(hints).toHaveText(["prod", "dev", "work"]);
+
+  // Набранный кусок сужает список, щелчок дописывает тег целиком.
+  await tags.fill("pr");
+  await expect(hints).toHaveText(["prod"]);
+  await hints.first().click();
+  await expect(tags).toHaveValue("prod, ");
+  await expect(tags).toBeFocused();
+  await expect(hints).toHaveText(["dev", "work"]);
+
+  await hints.filter({ hasText: "work" }).click();
+  await expect(tags).toHaveValue("prod, work, ");
+  await expect(hints).toHaveText(["dev"]);
+});
+
+test("избранные записи показываются над разделами", async ({ page }) => {
+  await unlock(page);
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  await expect(favorites.getByRole("button")).toHaveText([/web-01/, /почта/]);
+
+  await favorites.getByRole("button", { name: /почта/ }).click();
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+
+  // Звёздочка в карточке убирает запись из избранного и добавляет обратно.
+  await page.getByRole("button", { name: "Убрать из избранного" }).click();
+  await expect(favorites.getByRole("button")).toHaveText([/web-01/]);
+  await page.getByRole("button", { name: "Добавить в избранное" }).click();
+  await expect(favorites.getByRole("button")).toHaveText([/web-01/, /почта/]);
+
+  // В виде Markdown видна строка признака.
+  await page.getByRole("tab", { name: "Markdown" }).click();
+  await expect(page.getByText("favorite:")).toBeVisible();
+
+  // Во время поиска избранное спрятано: найденное и так в списке.
+  await page.getByRole("searchbox", { name: "Поиск" }).fill("web");
+  await expect(favorites).toHaveCount(0);
+});
+
+test("длинное избранное свёрнуто до пяти записей", async ({ page }) => {
+  await unlock(page);
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  for (const title of [/web-02/, /БД каталога/, /example\.test/]) {
+    await sidebar(page).getByRole("button", { name: title }).click();
+    await page.getByRole("button", { name: "Добавить в избранное" }).click();
+  }
+  await expect(favorites.getByRole("button")).toHaveCount(5);
+  await expect(favorites.getByRole("button", { name: /Избранное/ })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("шестая");
+  await page.getByRole("button", { name: "В избранном" }).click();
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  await expect(page.getByRole("status")).toContainText("Запись добавлена");
+
+  const more = favorites.getByRole("button", { name: /Избранное/ });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(more).toContainText("5 из 6");
+  await expect(favorites.getByRole("button", { name: /шестая/ })).toHaveCount(0);
+
+  await more.click();
+  await expect(favorites.getByRole("button", { name: /шестая/ })).toBeVisible();
+  await more.click();
+  await expect(favorites.getByRole("button", { name: /шестая/ })).toHaveCount(0);
+});
+
+test("в редакторе запись добавляется в избранное", async ({ page }) => {
+  await unlock(page);
+  await sidebar(page).getByRole("button", { name: /БД каталога/ }).click();
+  await page.getByRole("button", { name: "Редактировать" }).click();
+  const star = page.getByRole("button", { name: "В избранном" });
+  await expect(star).toHaveAttribute("aria-pressed", "false");
+  await star.click();
+  await page.getByRole("button", { name: "Сохранить", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Изменения сохранены");
+  await expect(page.getByRole("navigation", { name: "Избранное" }).getByRole("button")).toHaveText([
+    /web-01/,
+    /БД каталога/,
+    /почта/,
+  ]);
 });
 
 test("много тегов не вытесняют список записей", async ({ page }) => {
@@ -290,6 +420,8 @@ test("в настройках есть все горячие клавиши", as
   }
   const copy = page.getByRole("region", { name: "Запись и список раздела справа" }).locator(".key-row", { hasText: "Скопировать поле" });
   await expect(copy.locator("kbd")).toHaveText(["Ctrl", "C", "Enter"]);
+  const favorites = page.getByRole("region", { name: "Список записей слева" }).locator(".key-row", { hasText: "На заголовке «Избранное»" });
+  await expect(favorites.locator("kbd")).toHaveText(["→", "←", "Enter"]);
 });
 
 test("настройки: защита файла и резервные копии", async ({ page }) => {

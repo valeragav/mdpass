@@ -131,6 +131,7 @@ fn import_into_a_filled_vault_appends_entries_and_keeps_loose_lines_as_a_note() 
             title: "старая".into(),
             fields: vec![Field::new("k", "v")],
             tags: vec![],
+            favorite: false,
         })
         .unwrap();
     assert_eq!(merge_into(&mut vault, &result).unwrap(), 5);
@@ -151,6 +152,7 @@ fn odd_sections_keys_and_tags_do_not_stop_an_import() {
             title: "есть".into(),
             fields: vec![Field::new("k", "v")],
             tags: vec![],
+            favorite: false,
         })
         .unwrap();
     assert_eq!(merge_into(&mut vault, &result).unwrap(), 1);

@@ -23,6 +23,7 @@ fn sample_draft() -> EntryDraft {
         title: "alpha".into(),
         fields: vec![Field::new("ssh", "h"), Field::new("password", "p")],
         tags: vec![],
+        favorite: false,
     }
 }
 

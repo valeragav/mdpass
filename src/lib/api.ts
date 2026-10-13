@@ -65,6 +65,8 @@ export interface EntryView {
   path: string[];
   title: string;
   tags: string[];
+  /// Строка `favorite: true`: запись в списке «Избранное».
+  favorite: boolean;
   fields: FieldView[];
 }
 
@@ -80,6 +82,7 @@ export interface DraftInput {
   path: string[];
   title: string;
   tags: string[];
+  favorite: boolean;
   fields: FieldInput[];
 }
 
@@ -209,6 +212,7 @@ export const api = {
   addEntry: (draft: DraftInput) => call<number>("add_entry", { draft }),
   updateEntry: (entryId: number, draft: DraftInput) => call<void>("update_entry", { entryId, draft }),
   deleteEntry: (entryId: number) => call<void>("delete_entry", { entryId }),
+  setFavorite: (entryId: number, favorite: boolean) => call<void>("set_favorite", { entryId, favorite }),
   generatePassword: (length?: number) => invoke<string>("generate_password", { length }),
   moveEntry: (entryId: number, path: string[], beforeId: number | null) =>
     call<void>("move_entry", { entryId, path, beforeId }),

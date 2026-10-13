@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EntryView } from "../../lib/api";
+  import { errorText, type EntryView } from "../../lib/api";
   import { app, go } from "../../lib/nav.svelte";
   import { previewLines } from "../../lib/entryText";
   import { fieldCursor, MASK, onFieldKey, pickField, revealField, shownValue } from "../../lib/fields";
@@ -7,7 +7,8 @@
   import Button from "../../lib/ui/Button.svelte";
   import MarkdownPreview from "../../lib/ui/MarkdownPreview.svelte";
   import IconButton from "../../lib/ui/IconButton.svelte";
-  import { isNote } from "../../lib/vault.svelte";
+  import { showToast } from "../../lib/toast.svelte";
+  import { isNote, toggleFavorite } from "../../lib/vault.svelte";
   import FieldRow from "./FieldRow.svelte";
 
   interface Props {
@@ -36,6 +37,7 @@
       path: entry.path,
       title: entry.title,
       tags: entry.tags,
+      favorite: entry.favorite,
       fields: entry.fields.map((field, index) => ({ key: field.key, value: shownValue(entry, index) })),
     }),
   );
@@ -51,6 +53,15 @@
     <div class="title-row">
       <h1>{entry.title}</h1>
       <div class="actions">
+        <IconButton
+          icon="star"
+          label={entry.favorite ? "Убрать из избранного" : "Добавить в избранное"}
+          bordered
+          size="sm"
+          pressed={entry.favorite}
+          filled={entry.favorite}
+          onclick={() => toggleFavorite(entry).catch((err) => showToast(errorText(err)))}
+        />
         <Button size="sm" icon="edit" onclick={() => go("edit-entry")}>Редактировать</Button>
         <IconButton icon="trash" label="Удалить запись" bordered size="sm" onclick={ondelete} />
       </div>

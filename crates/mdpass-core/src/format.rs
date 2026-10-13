@@ -10,6 +10,7 @@
 //! note: первая строка
 //!   вторая строка        ← продолжение значения, отступ в два пробела
 //! tags: [work], [prod]   ← теги
+//! favorite: true         ← запись в избранном
 //! ```
 //!
 //! Первая строка файла — метка формата `<!-- mdpass:1 -->`. В редакторах Markdown
@@ -34,6 +35,7 @@ const HEADER_END: &str = " -->";
 /// Самый глубокий заголовок Markdown: столько уровней разделов бывает.
 const MAX_LEVEL: usize = 6;
 const TAGS_KEY: &str = "tags";
+const FAVORITE_KEY: &str = "favorite";
 const SECRET_MARKER: char = '!';
 /// Ключ секретный, если содержит одно из этих слов…
 const SECRET_WORDS: [&str; 4] = ["password", "passwd", "token", "secret"];
@@ -100,6 +102,8 @@ pub struct Entry {
     pub title: String,
     pub fields: Vec<Field>,
     pub tags: Vec<String>,
+    /// Строка `favorite: true`: запись показывается в списке «Избранное».
+    pub favorite: bool,
     /// Строки записи, которые не похожи на поле «ключ: значение».
     pub extra: Vec<String>,
 }
@@ -111,6 +115,7 @@ pub struct EntryDraft {
     pub title: String,
     pub fields: Vec<Field>,
     pub tags: Vec<String>,
+    pub favorite: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -140,7 +145,7 @@ impl fmt::Display for FormatError {
             Self::TooDeep => write!(f, "Слишком много вложенных разделов: можно не больше {MAX_LEVEL}"),
             Self::InvalidKey(key) => write!(
                 f,
-                "Недопустимый ключ поля «{key}»: нужен непустой ключ без пробелов, «:» и «!» на конце, кроме «{TAGS_KEY}»"
+                "Недопустимый ключ поля «{key}»: нужен непустой ключ без пробелов, «:» и «!» на конце, кроме «{TAGS_KEY}» и «{FAVORITE_KEY}»"
             ),
             Self::InvalidTag(tag) => write!(f, "Недопустимый тег «{tag}»: в теге не должно быть «,», «[» и «]»"),
             Self::NotFound => write!(f, "Запись не найдена"),
@@ -209,6 +214,7 @@ struct EntryNode {
     title: String,
     fields: Vec<Field>,
     tags: Vec<String>,
+    favorite: bool,
     /// Строки записи, которые не похожи на поле. Сохраняются как есть.
     extra: Vec<String>,
     trailing_blank: usize,
@@ -335,6 +341,7 @@ impl Document {
                     title: e.title.clone(),
                     fields: e.fields.clone(),
                     tags: e.tags.clone(),
+                    favorite: e.favorite,
                     extra: e.extra.clone(),
                 }),
                 _ => None,
@@ -363,11 +370,15 @@ impl Document {
         let Node::Entry(entry) = &mut work.nodes[index] else { unreachable!() };
 
         if current_path == draft.path {
-            let unchanged = entry.title == draft.title && entry.fields == draft.fields && entry.tags == draft.tags;
+            let unchanged = entry.title == draft.title
+                && entry.fields == draft.fields
+                && entry.tags == draft.tags
+                && entry.favorite == draft.favorite;
             if !unchanged {
                 entry.title = draft.title;
                 entry.fields = draft.fields;
                 entry.tags = draft.tags;
+                entry.favorite = draft.favorite;
                 entry.raw = None;
             }
         } else {
@@ -377,6 +388,18 @@ impl Document {
             work.insert_entry(id, draft, extra)?;
         }
         *self = work;
+        Ok(())
+    }
+
+    /// Добавляет запись в избранное или убирает из него. Остальное в записи не меняется.
+    pub fn set_favorite(&mut self, id: EntryId, favorite: bool) -> Result<(), FormatError> {
+        let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+        if let Node::Entry(entry) = &mut self.nodes[index]
+            && entry.favorite != favorite
+        {
+            entry.favorite = favorite;
+            entry.raw = None;
+        }
         Ok(())
     }
 
@@ -617,6 +640,7 @@ impl Document {
             title: draft.title,
             fields: draft.fields,
             tags: draft.tags,
+            favorite: draft.favorite,
             extra,
             trailing_blank: 0,
             raw: None,
@@ -716,6 +740,7 @@ pub(crate) fn entry_title_of(line: &str) -> Option<&str> {
 enum FieldLine {
     Field(Field),
     Tags(Vec<String>),
+    Favorite(bool),
 }
 
 fn parse_field(line: &str) -> Option<FieldLine> {
@@ -727,6 +752,14 @@ fn parse_field(line: &str) -> Option<FieldLine> {
     let value = line[colon + 1..].trim();
     if key.eq_ignore_ascii_case(TAGS_KEY) {
         return Some(FieldLine::Tags(parse_tags(value)));
+    }
+    if key.eq_ignore_ascii_case(FAVORITE_KEY) {
+        // Другое значение — не признак избранного: строка останется в записи как есть.
+        return match value.to_ascii_lowercase().as_str() {
+            "true" => Some(FieldLine::Favorite(true)),
+            "false" => Some(FieldLine::Favorite(false)),
+            _ => None,
+        };
     }
     let (key, marked) = match key.strip_suffix(SECRET_MARKER) {
         Some(key) => (key, true),
@@ -754,6 +787,7 @@ fn parse_tags(value: &str) -> Vec<String> {
 fn parse_entry(id: EntryId, title: String, body: &[&str]) -> EntryNode {
     let mut fields: Vec<Field> = Vec::new();
     let mut tags = Vec::new();
+    let mut favorite = false;
     let mut extra = Vec::new();
     let mut continues = false;
     for line in body {
@@ -778,11 +812,12 @@ fn parse_entry(id: EntryId, title: String, body: &[&str]) -> EntryNode {
                 continues = true;
             }
             Some(FieldLine::Tags(found)) => tags.extend(found),
+            Some(FieldLine::Favorite(on)) => favorite = on,
             None => extra.push(line.to_string()),
         }
     }
     let trailing_blank = body.iter().rev().take_while(|line| is_blank(line)).count();
-    EntryNode { id, title, fields, tags, extra, trailing_blank, raw: None }
+    EntryNode { id, title, fields, tags, favorite, extra, trailing_blank, raw: None }
 }
 
 fn render_entry(entry: &EntryNode, eol: &str, out: &mut String) {
@@ -799,16 +834,16 @@ fn render_entry(entry: &EntryNode, eol: &str, out: &mut String) {
         out.push_str(eol);
     }
 
-    // Теги пишутся перед заметкой, если она есть, иначе в конце полей.
-    let tags_at = entry.fields.iter().position(|f| f.key.eq_ignore_ascii_case("note")).unwrap_or(entry.fields.len());
+    // Теги и избранное пишутся перед заметкой, если она есть, иначе в конце полей.
+    let marks_at = entry.fields.iter().position(|f| f.key.eq_ignore_ascii_case("note")).unwrap_or(entry.fields.len());
     for (i, field) in entry.fields.iter().enumerate() {
-        if i == tags_at {
-            render_tags(&entry.tags, eol, out);
+        if i == marks_at {
+            render_marks(entry, eol, out);
         }
         render_field(field, eol, out);
     }
-    if tags_at == entry.fields.len() {
-        render_tags(&entry.tags, eol, out);
+    if marks_at == entry.fields.len() {
+        render_marks(entry, eol, out);
     }
 
     for line in entry.extra.iter().filter(|line| !indented(line)) {
@@ -839,15 +874,19 @@ fn render_field(field: &Field, eol: &str, out: &mut String) {
     }
 }
 
-fn render_tags(tags: &[String], eol: &str, out: &mut String) {
-    if tags.is_empty() {
-        return;
+fn render_marks(entry: &EntryNode, eol: &str, out: &mut String) {
+    if !entry.tags.is_empty() {
+        let list: Vec<String> = entry.tags.iter().map(|tag| format!("[{tag}]")).collect();
+        out.push_str(TAGS_KEY);
+        out.push_str(": ");
+        out.push_str(&list.join(", "));
+        out.push_str(eol);
     }
-    let list: Vec<String> = tags.iter().map(|tag| format!("[{tag}]")).collect();
-    out.push_str(TAGS_KEY);
-    out.push_str(": ");
-    out.push_str(&list.join(", "));
-    out.push_str(eol);
+    if entry.favorite {
+        out.push_str(FAVORITE_KEY);
+        out.push_str(": true");
+        out.push_str(eol);
+    }
 }
 
 /// Можно ли записать поле с таким ключом так, чтобы оно прочиталось обратно полем.
@@ -858,6 +897,7 @@ pub fn is_valid_key(key: &str) -> bool {
         && !key.starts_with('#')
         && !key.starts_with('*')
         && !key.eq_ignore_ascii_case(TAGS_KEY)
+        && !key.eq_ignore_ascii_case(FAVORITE_KEY)
 }
 
 /// Проверяет путь к разделу и убирает пробелы по краям названий.
@@ -925,5 +965,5 @@ fn normalize(draft: EntryDraft) -> Result<EntryDraft, FormatError> {
         tags.push(tag.to_string());
     }
 
-    Ok(EntryDraft { path, title, fields, tags })
+    Ok(EntryDraft { path, title, fields, tags, favorite: draft.favorite })
 }

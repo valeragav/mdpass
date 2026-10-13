@@ -227,7 +227,7 @@ fn portable_draft(entry: &Entry) -> EntryDraft {
         .map(|tag| tag.chars().filter(|c| !matches!(c, ',' | '[' | ']')).collect::<String>())
         .filter(|tag| !tag.trim().is_empty())
         .collect();
-    EntryDraft { path, title: entry.title.clone(), fields, tags }
+    EntryDraft { path, title: entry.title.clone(), fields, tags, favorite: entry.favorite }
 }
 
 fn draft_of(entry: &Entry) -> EntryDraft {
@@ -236,6 +236,7 @@ fn draft_of(entry: &Entry) -> EntryDraft {
         title: entry.title.clone(),
         fields: entry.fields.clone(),
         tags: entry.tags.clone(),
+        favorite: entry.favorite,
     }
 }
 

@@ -143,6 +143,7 @@ pub fn run() {
             entries::add_entry,
             entries::update_entry,
             entries::delete_entry,
+            entries::set_favorite,
             entries::generate_password,
             entries::move_entry,
             entries::move_section,

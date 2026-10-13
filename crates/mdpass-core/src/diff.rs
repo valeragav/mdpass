@@ -56,5 +56,8 @@ fn changed_keys(current: &Entry, next: &Entry) -> Vec<String> {
     if current.tags != next.tags {
         keys.push("tags".into());
     }
+    if current.favorite != next.favorite {
+        keys.push("favorite".into());
+    }
     keys
 }

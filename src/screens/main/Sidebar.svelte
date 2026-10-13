@@ -4,6 +4,8 @@
   // Свёрнутые разделы. Живут только в памяти: названия разделов не должны
   // оставаться на диске в открытом виде.
   const collapsed = new SvelteSet<string>();
+  // Раскрыт ли длинный список избранного.
+  let favoritesOpen = $state(false);
 </script>
 
 <script lang="ts">
@@ -28,6 +30,10 @@
   type GroupRow = { kind: "group"; key: string; depth: number; label: string; path: string[] };
   type EntryRow = { kind: "entry"; key: string; depth: number; entry: EntryView };
   type Row = GroupRow | EntryRow;
+  // Строки избранного: заголовок (если список длинный) и записи.
+  type FavHeadRow = { kind: "fav-head"; key: string };
+  type FavRow = { kind: "fav"; key: string; entry: EntryView };
+  type NavRow = Row | FavHeadRow | FavRow;
 
   const pathKey = (path: string[]) => path.join("\u0000");
   const startsWith = (path: string[], prefix: string[]) => prefix.every((part, i) => path[i] === part);
@@ -70,18 +76,62 @@
     else collapsed.add(key);
   }
 
-  // ---- Стрелки -----------------------------------------------------------
-  // Курсор списка — это выбранная строка: запись или раздел.
+  // Избранное — над разделами, в порядке файла. Во время поиска не показывается:
+  // найденное и так видно в списке.
+  let favorites = $derived(filtering ? [] : vault.entries.filter((e) => e.favorite));
 
-  function isCurrent(row: Row): boolean {
-    if (row.kind === "group") return vault.selectedSection !== null && pathKey(vault.selectedSection) === pathKey(row.path);
-    return vault.selectedSection === null && row.entry.id === vault.selectedId;
+  // Длинный список избранного свёрнут до первых записей, остальные раскрывает стрелка.
+  const FAVORITES_SHOWN = 5;
+  let favoritesLong = $derived(favorites.length > FAVORITES_SHOWN);
+  let favoritesShown = $derived(
+    favoritesLong && !favoritesOpen ? favorites.slice(0, FAVORITES_SHOWN) : favorites,
+  );
+
+  // Все строки, по которым ходят стрелки: сначала избранное, потом разделы и записи.
+  let navRows = $derived<NavRow[]>([
+    ...(favoritesLong ? [{ kind: "fav-head", key: "fav-head" } as const] : []),
+    ...favoritesShown.map((entry) => ({ kind: "fav", key: `f:${entry.id}`, entry }) as const),
+    ...shown,
+  ]);
+
+  // ---- Стрелки -----------------------------------------------------------
+  // Курсор списка — это выбранная строка: запись или раздел. Избранная запись есть
+  // и в избранном, и в разделе, поэтому отдельно помним, где из двух стоит курсор.
+
+  let cursorIn = $state<"list" | "fav" | "fav-head">("list");
+
+  // Курсор в избранном, только пока выбранная запись там видна. Иначе он в разделе.
+  let favCursor = $derived(
+    cursorIn === "fav" && vault.selectedSection === null && favoritesShown.some((e) => e.id === vault.selectedId),
+  );
+
+  function isCurrent(row: NavRow): boolean {
+    switch (row.kind) {
+      case "fav-head":
+        return cursorIn === "fav-head";
+      case "fav":
+        return favCursor && row.entry.id === vault.selectedId;
+      case "group":
+        return (
+          cursorIn !== "fav-head" &&
+          vault.selectedSection !== null &&
+          pathKey(vault.selectedSection) === pathKey(row.path)
+        );
+      case "entry":
+        return (
+          cursorIn !== "fav-head" && !favCursor && vault.selectedSection === null && row.entry.id === vault.selectedId
+        );
+    }
   }
 
-  function select(row: Row | undefined) {
+  function select(row: NavRow | undefined) {
     if (!row) return;
-    if (row.kind === "group") vault.selectedSection = row.path;
-    else {
+    if (row.kind === "fav-head") cursorIn = "fav-head";
+    else if (row.kind === "group") {
+      cursorIn = "list";
+      vault.selectedSection = row.path;
+    } else {
+      cursorIn = row.kind === "fav" ? "fav" : "list";
       vault.selectedId = row.entry.id;
       vault.selectedSection = null;
     }
@@ -89,18 +139,18 @@
     if (document.activeElement instanceof HTMLElement && list?.contains(document.activeElement)) {
       document.activeElement.blur();
     }
-    scrollToCursor(() => [...(list?.querySelectorAll<HTMLElement>("[data-drop]") ?? [])].find((el) => el.dataset.drop === row.key));
+    scrollToCursor(() => [...(list?.querySelectorAll<HTMLElement>("[data-nav]") ?? [])].find((el) => el.dataset.nav === row.key));
   }
 
   let search: HTMLInputElement | undefined = $state();
 
   /// ↓ в поиске возвращает в список: к выбранной строке или к первой.
   function onSearchKey(event: KeyboardEvent) {
-    if (event.key !== "ArrowDown" || shown.length === 0) return;
+    if (event.key !== "ArrowDown" || navRows.length === 0) return;
     event.preventDefault();
     search?.blur();
     keyNav.zone = "list";
-    select(shown.find(isCurrent) ?? shown[0]);
+    select(navRows.find(isCurrent) ?? navRows[0]);
   }
 
   function openFields() {
@@ -109,17 +159,20 @@
   }
 
   // ↑ ↓ — по строкам, → или Enter — перейти вправо: к полям записи или в список раздела,
-  // ← — свернуть раздел или подняться к разделу.
+  // ← — свернуть раздел или подняться к разделу. Избранное идёт первым: у его заголовка
+  // → раскрывает весь список, ← сворачивает, Enter переключает.
   function onKey(event: KeyboardEvent) {
     if (keyNav.zone !== "list" || !isNavKey(event) || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    if (shown.length === 0) return;
-    const at = shown.findIndex(isCurrent);
-    const row = shown[at];
+    if (navRows.length === 0) return;
+    const at = navRows.findIndex(isCurrent);
+    const row = navRows[at];
     const open = row?.kind === "group" && (filtering || !collapsed.has(pathKey(row.path)));
-    const parent = () => {
+    const parent = (): NavRow | undefined => {
+      if (row.kind === "fav") return navRows.find((r) => r.kind === "fav-head");
+      if (row.kind === "fav-head") return undefined;
       const path = row.kind === "group" ? row.path.slice(0, -1) : row.entry.path;
       for (let i = at - 1; i >= 0; i--) {
-        const r = shown[i];
+        const r = navRows[i];
         if (r.kind === "group" && pathKey(r.path) === pathKey(path)) return r;
       }
       return undefined;
@@ -127,23 +180,25 @@
 
     switch (event.key) {
       case "ArrowDown":
-        select(shown[at < 0 ? 0 : Math.min(at + 1, shown.length - 1)]);
+        select(navRows[at < 0 ? 0 : Math.min(at + 1, navRows.length - 1)]);
         break;
       case "ArrowUp":
         // С первой строки — в поиск.
         if (at <= 0) search?.focus();
-        else select(shown[at - 1]);
+        else select(navRows[at - 1]);
         break;
       case "Home":
-        select(shown[0]);
+        select(navRows[0]);
         break;
       case "End":
-        select(shown[shown.length - 1]);
+        select(navRows[navRows.length - 1]);
         break;
       case "ArrowRight":
       case "Enter":
-        if (!row) select(shown[0]);
-        else {
+        if (!row) select(navRows[0]);
+        else if (row.kind === "fav-head") {
+          if (event.key === "Enter" || !favoritesOpen) favoritesOpen = !favoritesOpen;
+        } else {
           // У раздела — в его список справа; свёрнутый заодно раскрывается.
           if (row.kind === "group" && !open) toggle(row);
           openFields();
@@ -151,7 +206,8 @@
         break;
       case "ArrowLeft":
         if (!row) return;
-        if (row.kind === "group" && open && !filtering) toggle(row);
+        if (row.kind === "fav-head") favoritesOpen = false;
+        else if (row.kind === "group" && open && !filtering) toggle(row);
         else select(parent());
         break;
 
@@ -392,64 +448,114 @@
     {/if}
   </div>
 
-  <nav class="list scroll" aria-label="Записи" bind:this={list}>
-    {#if empty}
-      <p class="none">Записей пока нет</p>
-    {:else if visible.length === 0}
-      <p class="none">Ничего не найдено</p>
+  <div class="list scroll" bind:this={list}>
+    {#if favorites.length > 0}
+      <nav class="favorites" aria-label="Избранное">
+        {#if favoritesLong}
+          <button
+            type="button"
+            class="fav-head mono"
+            class:on={cursorIn === "fav-head"}
+            data-nav="fav-head"
+            aria-expanded={favoritesOpen}
+            onclick={() => {
+              keyNav.zone = "list";
+              cursorIn = "fav-head";
+              favoritesOpen = !favoritesOpen;
+            }}
+          >
+            <span class="chevron" class:open={favoritesOpen} aria-hidden="true"
+              ><Icon name="chevron" size={14} stroke={2} /></span
+            >
+            <Icon name="star" size={12} stroke={2} fill="currentColor" />
+            <span class="label">Избранное</span>
+            <span class="count">{favoritesOpen ? favorites.length : `${FAVORITES_SHOWN} из ${favorites.length}`}</span>
+          </button>
+        {:else}
+          <div class="fav-head mono"><Icon name="star" size={12} stroke={2} fill="currentColor" />Избранное</div>
+        {/if}
+        {#each favoritesShown as entry (entry.id)}
+          <button
+            type="button"
+            class="entry fav"
+            class:on={favCursor && entry.id === vault.selectedId}
+            data-nav="f:{entry.id}"
+            onclick={() => {
+              vault.selectedId = entry.id;
+              vault.selectedSection = null;
+              cursorIn = "fav";
+              keyNav.zone = "list";
+            }}
+          >
+            <span class="title">{entry.title}</span>
+            <span class="hint mono">{entry.path.join(" / ")}</span>
+          </button>
+        {/each}
+      </nav>
     {/if}
-    {#each shown as row (row.key)}
-      {#if row.kind === "group"}
-        {@const open = filtering || !collapsed.has(pathKey(row.path))}
-        <button
-          type="button"
-          class="group mono {dropClass(row.key)}"
-          class:faded={isDragged(row)}
-          class:on={vault.selectedSection !== null && pathKey(vault.selectedSection) === pathKey(row.path)}
-          data-drop={row.key}
-          aria-expanded={open}
-          style:padding-left="{6 + row.depth * 16}px"
-          onpointerdown={(e) => startPress(e, { kind: "section", path: row.path }, row.label)}
-          onclick={(e) => {
-            if (suppressClick) return;
-            keyNav.zone = "list";
-            // Первый щелчок открывает справа записи раздела, следующий сворачивает его.
-            // Стрелка слева сворачивает сразу.
-            const onChevron = (e.target as HTMLElement).closest(".chevron") !== null;
-            if (onChevron || isCurrent(row)) toggle(row);
-            else if (!open) toggle(row);
-            vault.selectedSection = row.path;
-          }}
-        >
-          <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
-          <span class="label">{row.label}</span>
-        </button>
-      {:else}
-        <button
-          type="button"
-          class="entry {dropClass(row.key)}"
-          class:on={row.entry.id === vault.selectedId && vault.selectedSection === null}
-          class:faded={isDragged(row)}
-          data-drop={row.key}
-          aria-current={row.entry.id === vault.selectedId ? "true" : undefined}
-          style:padding-left="{24 + row.depth * 16}px"
-          onpointerdown={(e) => startPress(e, { kind: "entry", entry: row.entry }, row.entry.title)}
-          onclick={() => {
-            if (suppressClick) return;
-            vault.selectedId = row.entry.id;
-            vault.selectedSection = null;
-            keyNav.zone = "list";
-          }}
-        >
-          <span class="title">{row.entry.title}</span>
-          <span class="hint mono">{entryHint(row.entry)}</span>
-        </button>
+    <nav aria-label="Записи">
+      {#if empty}
+        <p class="none">Записей пока нет</p>
+      {:else if visible.length === 0}
+        <p class="none">Ничего не найдено</p>
       {/if}
-    {/each}
-    {#if dragging}
-      <div class="root-drop mono {dropClass('root')}" data-drop="root">Перетащите сюда, чтобы перенести на верхний уровень</div>
-    {/if}
-  </nav>
+      {#each shown as row (row.key)}
+        {#if row.kind === "group"}
+          {@const open = filtering || !collapsed.has(pathKey(row.path))}
+          <button
+            type="button"
+            class="group mono {dropClass(row.key)}"
+            class:faded={isDragged(row)}
+            class:on={isCurrent(row)}
+            data-drop={row.key}
+            data-nav={row.key}
+            aria-expanded={open}
+            style:padding-left="{6 + row.depth * 16}px"
+            onpointerdown={(e) => startPress(e, { kind: "section", path: row.path }, row.label)}
+            onclick={(e) => {
+              if (suppressClick) return;
+              keyNav.zone = "list";
+              cursorIn = "list";
+              // Первый щелчок открывает справа записи раздела, следующий сворачивает его.
+              // Стрелка слева сворачивает сразу.
+              const onChevron = (e.target as HTMLElement).closest(".chevron") !== null;
+              if (onChevron || isCurrent(row)) toggle(row);
+              else if (!open) toggle(row);
+              vault.selectedSection = row.path;
+            }}
+          >
+            <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
+            <span class="label">{row.label}</span>
+          </button>
+        {:else}
+          <button
+            type="button"
+            class="entry {dropClass(row.key)}"
+            class:on={isCurrent(row)}
+            class:faded={isDragged(row)}
+            data-drop={row.key}
+            data-nav={row.key}
+            aria-current={row.entry.id === vault.selectedId ? "true" : undefined}
+            style:padding-left="{24 + row.depth * 16}px"
+            onpointerdown={(e) => startPress(e, { kind: "entry", entry: row.entry }, row.entry.title)}
+            onclick={() => {
+              if (suppressClick) return;
+              vault.selectedId = row.entry.id;
+              vault.selectedSection = null;
+              cursorIn = "list";
+              keyNav.zone = "list";
+            }}
+          >
+            <span class="title">{row.entry.title}</span>
+            <span class="hint mono">{entryHint(row.entry)}</span>
+          </button>
+        {/if}
+      {/each}
+      {#if dragging}
+        <div class="root-drop mono {dropClass('root')}" data-drop="root">Перетащите сюда, чтобы перенести на верхний уровень</div>
+      {/if}
+    </nav>
+  </div>
 
   <div class="bottom">
     <Button variant="primary" size="sm" icon="plus" full onclick={() => go("new-entry")}>Новая запись</Button>
@@ -587,6 +693,47 @@
     padding: 0 8px 8px;
   }
 
+  .favorites {
+    padding-bottom: 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .fav-head {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 10px;
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  button.fav-head {
+    padding-left: 6px;
+    border-radius: 6px;
+  }
+
+  button.fav-head:hover {
+    background: var(--bg-hover);
+  }
+
+  button.fav-head.on {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+  }
+
+  .entry.fav {
+    padding-left: 28px;
+  }
+
+  .fav .hint {
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .none {
     padding: 24px 12px;
     color: var(--text-subtle);
@@ -598,7 +745,7 @@
     align-items: center;
     gap: 6px;
     margin-top: 8px;
-    min-height: 32px;
+    height: 30px;
     padding-right: 10px;
     border-radius: 6px;
     font-size: 12px;
@@ -637,7 +784,7 @@
 
   .entry {
     width: 100%;
-    height: 36px;
+    height: 30px;
     display: flex;
     align-items: center;
     justify-content: space-between;

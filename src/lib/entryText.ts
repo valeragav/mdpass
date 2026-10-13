@@ -21,6 +21,7 @@ export interface PreviewEntry {
   path: string[];
   title: string;
   tags: string[];
+  favorite: boolean;
   /// `value: null` — значение скрыто и показывается точками.
   fields: { key: string; value: string | null }[];
 }
@@ -37,17 +38,21 @@ export function previewLines(entry: PreviewEntry): PreviewLine[] {
     tone: entry.title ? "title" : "placeholder",
   });
 
-  const tagsLine = entry.tags.length ? entry.tags.map((t) => `[${t}]`).join(", ") : null;
-  // Теги пишутся перед заметкой, если она есть.
+  const marks: PreviewLine[] = [];
+  if (entry.tags.length) {
+    marks.push({ prefix: "", key: "tags:", value: " " + entry.tags.map((t) => `[${t}]`).join(", "), tone: "plain" });
+  }
+  if (entry.favorite) marks.push({ prefix: "", key: "favorite:", value: " true", tone: "plain" });
+  // Теги и избранное пишутся перед заметкой, если она есть.
   const noteAt = entry.fields.findIndex((f) => f.key.toLowerCase() === "note");
   entry.fields.forEach((field, i) => {
-    if (tagsLine && i === noteAt) out.push({ prefix: "", key: "tags:", value: " " + tagsLine, tone: "plain" });
+    if (i === noteAt) out.push(...marks);
     const value = field.value ?? "••••••••";
     const [first, ...rest] = value.split("\n");
     out.push({ prefix: "", key: field.key + ":", value: first ? " " + first : "", tone: "plain" });
     for (const line of rest) out.push({ prefix: "  ", key: "", value: line, tone: "plain" });
   });
-  if (tagsLine && noteAt === -1) out.push({ prefix: "", key: "tags:", value: " " + tagsLine, tone: "plain" });
+  if (noteAt === -1) out.push(...marks);
   return out;
 }
 

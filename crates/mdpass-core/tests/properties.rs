@@ -75,7 +75,13 @@ fn op() -> impl Strategy<Value = Op> {
 }
 
 fn draft(path: Vec<String>, title: String, value: String) -> EntryDraft {
-    EntryDraft { path, title, fields: vec![Field::new("login", value), Field::new("password", "p")], tags: vec![] }
+    EntryDraft {
+        path,
+        title,
+        fields: vec![Field::new("login", value), Field::new("password", "p")],
+        tags: vec![],
+        favorite: false,
+    }
 }
 
 /// Все разделы документа: пути всех записей и их предков.

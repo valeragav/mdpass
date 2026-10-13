@@ -26,6 +26,7 @@
     edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
     trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
     "lock-memory": '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11h8"/><path d="M8 11V7a4 4 0 017.5-2"/>',
+    star: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>',
     document: '<path d="M14 3H7a2 2 0 00-2 2v14a2 2 0 002 2h10a2 2 0 002-2V8z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h4"/>',
   } as const;
 
@@ -38,16 +39,18 @@
     size?: number;
     stroke?: number;
     color?: string;
+    /// Заливка контура, например у включённой звёздочки.
+    fill?: string;
   }
 
-  let { name, size = 16, stroke = 1.75, color = "currentColor" }: Props = $props();
+  let { name, size = 16, stroke = 1.75, color = "currentColor", fill = "none" }: Props = $props();
 </script>
 
 <svg
   width={size}
   height={size}
   viewBox="0 0 24 24"
-  fill="none"
+  {fill}
   stroke={color}
   stroke-width={stroke}
   stroke-linecap="round"

@@ -52,6 +52,12 @@ export async function deleteEntry(entryId: number, title: string) {
   showToast(`Запись «${title}» удалена`);
 }
 
+export async function toggleFavorite(entry: EntryView) {
+  await api.setFavorite(entry.id, !entry.favorite);
+  await loadEntries();
+  showToast(entry.favorite ? `«${entry.title}» убрана из избранного` : `«${entry.title}» добавлена в избранное`);
+}
+
 /// Стирает записи из памяти интерфейса и показывает экран разблокировки.
 export function forgetEntries() {
   vault.entries = [];
