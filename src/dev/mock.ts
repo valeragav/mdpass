@@ -15,27 +15,27 @@ let protection: "strong" | "weak" | "none" = "strong";
 
 // Выдуманные данные: адреса из диапазонов для документации, пароли случайные.
 const ENTRIES = [
-  { id: 1, path: ["work", "server"], title: "web-01 (прод)", tags: ["prod"], favorite: true, fields: [
+  { id: 1, path: ["work", "server"], title: "web-01 (прод)", tags: ["prod"], favorite: true, favoriteOrder: null as number | null, fields: [
     { key: "ssh", value: "deploy@203.0.113.10", secret: false },
     { key: "password", value: "q7#Lm2vX9pTe", secret: true },
   ] },
-  { id: 2, path: ["work", "server"], title: "web-02 (тест)", tags: ["dev"], favorite: false, fields: [
+  { id: 2, path: ["work", "server"], title: "web-02 (тест)", tags: ["dev"], favorite: false, favoriteOrder: null as number | null, fields: [
     { key: "ssh", value: "deploy@198.51.100.24", secret: false },
     { key: "password", value: "Zk4!rW8nYb1s", secret: true },
   ] },
-  { id: 3, path: ["work", "server"], title: "БД каталога", tags: [], favorite: false, fields: [
+  { id: 3, path: ["work", "server"], title: "БД каталога", tags: [], favorite: false, favoriteOrder: null as number | null, fields: [
     { key: "port", value: "5432", secret: false },
     { key: "user", value: "catalog_app", secret: false },
     { key: "password", value: "hV3$eQ6mJ0cA", secret: true },
     { key: "note", value: "таблицу catalog_tmp можно удалять", secret: false },
   ] },
-  { id: 4, path: ["work", "site"], title: "example.test", tags: ["work", "prod"], favorite: false, fields: [
+  { id: 4, path: ["work", "site"], title: "example.test", tags: ["work", "prod"], favorite: false, favoriteOrder: null as number | null, fields: [
     { key: "url", value: "https://example.test/", secret: false },
     { key: "url_admin", value: "https://example.test/admin", secret: false },
     { key: "login", value: "admin", secret: false },
     { key: "password", value: "Tn5&uP2wGx7d", secret: true },
   ] },
-  { id: 5, path: ["my"], title: "почта", tags: [], favorite: true, fields: [
+  { id: 5, path: ["my"], title: "почта", tags: [], favorite: true, favoriteOrder: null as number | null, fields: [
     { key: "login", value: "me@example.test", secret: false },
     { key: "password", value: "fR9^kL3zVm6q", secret: true },
   ] },
@@ -57,6 +57,8 @@ function applyDraft(draft: Draft, current?: (typeof ENTRIES)[number]) {
     title: draft.title,
     tags: draft.tags,
     favorite: draft.favorite,
+    // Форма знает только «в избранном или нет»: номер остаётся прежним.
+    favoriteOrder: draft.favorite ? (current?.favoriteOrder ?? null) : null,
     fields: draft.fields.map((f) => ({
       key: f.key,
       value: f.value ?? (f.keepFrom !== null ? (current?.fields[f.keepFrom]?.value ?? "") : ""),
@@ -152,7 +154,19 @@ mockIPC(
       const n = args as { entryId: number; favorite: boolean };
       const entry = ENTRIES.find((e) => e.id === n.entryId);
       if (!entry) throw { kind: "entryNotFound" };
+      if (entry.favorite !== n.favorite) {
+        const numbers = ENTRIES.map((e) => e.favoriteOrder ?? 0);
+        entry.favoriteOrder = n.favorite && Math.max(...numbers) > 0 ? Math.max(...numbers) + 1 : null;
+      }
       entry.favorite = n.favorite;
+      return null;
+    }
+    case "order_favorites": {
+      (args as { entryIds: number[] }).entryIds.forEach((id, i) => {
+        const entry = ENTRIES.find((e) => e.id === id);
+        if (!entry) throw { kind: "entryNotFound" };
+        entry.favoriteOrder = i + 1;
+      });
       return null;
     }
     case "delete_entry": {

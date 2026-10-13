@@ -282,6 +282,35 @@ test("длинное избранное свёрнуто до пяти запи�
   await expect(favorites.getByRole("button", { name: /шестая/ })).toHaveCount(0);
 });
 
+test("избранное переставляется перетаскиванием и Alt+стрелками", async ({ page }) => {
+  await unlock(page);
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  const rows = favorites.getByRole("button");
+  await expect(rows).toHaveText([/web-01/, /почта/]);
+
+  // «почта» — на верхнюю половину «web-01».
+  const from = (await favorites.getByRole("button", { name: /почта/ }).boundingBox())!;
+  const to = (await favorites.getByRole("button", { name: /web-01/ }).boundingBox())!;
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x + to.width / 2, to.y + 4, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByRole("status")).toContainText("Порядок избранного изменён");
+  await expect(rows).toHaveText([/почта/, /web-01/]);
+
+  // Номер места виден в файле.
+  await favorites.getByRole("button", { name: /почта/ }).click();
+  await page.getByRole("tab", { name: "Markdown" }).click();
+  await expect(page.locator("main").getByText("favorite:")).toBeVisible();
+  await expect(page.locator("main")).toContainText("favorite: 1");
+
+  // Alt+↓ возвращает её вниз, курсор остаётся на ней.
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(rows).toHaveText([/web-01/, /почта/]);
+  await expect(favorites.getByRole("button", { name: /почта/ })).toContainClass("on");
+  await expect(page.locator("main")).toContainText("favorite: 2");
+});
+
 test("в редакторе запись добавляется в избранное", async ({ page }) => {
   await unlock(page);
   await sidebar(page).getByRole("button", { name: /БД каталога/ }).click();

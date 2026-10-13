@@ -16,7 +16,7 @@
   import Button from "../../lib/ui/Button.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
   import { isNavKey, keyNav, scrollToCursor } from "../../lib/keys.svelte";
-  import { entryHint, loadEntries, vault } from "../../lib/vault.svelte";
+  import { entryHint, favoritesInOrder, loadEntries, vault } from "../../lib/vault.svelte";
 
   interface Props {
     /// Записи после поиска и фильтра по тегу.
@@ -78,7 +78,7 @@
 
   // Избранное — над разделами, в порядке файла. Во время поиска не показывается:
   // найденное и так видно в списке.
-  let favorites = $derived(filtering ? [] : vault.entries.filter((e) => e.favorite));
+  let favorites = $derived(filtering ? [] : favoritesInOrder(vault.entries));
 
   // Длинный список избранного свёрнут до первых записей, остальные раскрывает стрелка.
   const FAVORITES_SHOWN = 5;
@@ -162,6 +162,7 @@
   // ← — свернуть раздел или подняться к разделу. Избранное идёт первым: у его заголовка
   // → раскрывает весь список, ← сворачивает, Enter переключает.
   function onKey(event: KeyboardEvent) {
+    if (moveFavoriteByKey(event)) return;
     if (keyNav.zone !== "list" || !isNavKey(event) || event.ctrlKey || event.metaKey || event.shiftKey) return;
     if (navRows.length === 0) return;
     const at = navRows.findIndex(isCurrent);
@@ -246,13 +247,46 @@
     tagsOverflow = tagsBox.scrollHeight > tagsBox.clientHeight + 1;
   });
 
+  // Alt+↑ / Alt+↓ на избранной записи переносит её выше или ниже в избранном.
+  function moveFavoriteByKey(event: KeyboardEvent): boolean {
+    if (keyNav.zone !== "list" || !event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return false;
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return false;
+    if ((event.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable]")) return false;
+    if (!favCursor) return false;
+    event.preventDefault();
+    const ids = favorites.map((e) => e.id);
+    const from = ids.indexOf(vault.selectedId!);
+    const to = from + (event.key === "ArrowUp" ? -1 : 1);
+    if (to < 0 || to >= ids.length) return true;
+    ids.splice(to, 0, ...ids.splice(from, 1));
+    // Запись, ушедшая за пятую строку свёрнутого списка, иначе пропала бы из виду.
+    if (to >= FAVORITES_SHOWN) favoritesOpen = true;
+    void saveFavoriteOrder(ids, false);
+    return true;
+  }
+
+  async function saveFavoriteOrder(ids: number[], toast = true) {
+    try {
+      await api.orderFavorites(ids);
+      await loadEntries();
+      if (toast) showToast("Порядок избранного изменён");
+    } catch (err) {
+      showToast(errorText(err));
+    }
+  }
+
   // ---- Перетаскивание ----------------------------------------------------
   // Сделано на событиях указателя: HTML5 drag-and-drop в окне Tauri на Windows
   // перехватывает само окно.
 
-  type Dragged = { kind: "entry"; entry: EntryView } | { kind: "section"; path: string[] };
+  type Dragged =
+    | { kind: "entry"; entry: EntryView }
+    | { kind: "section"; path: string[] }
+    | { kind: "favorite"; entry: EntryView };
   type Target =
     | { kind: "into"; path: string[]; rowKey: string }
+    | { kind: "before-favorite"; entry: EntryView; rowKey: string }
+    | { kind: "after-favorite"; entry: EntryView; rowKey: string }
     | { kind: "before-entry"; entry: EntryView; rowKey: string }
     | { kind: "after-entry"; entry: EntryView; rowKey: string }
     | { kind: "before-section"; path: string[]; rowKey: string }
@@ -302,12 +336,23 @@
     if (!dragging) return null;
     const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-drop]");
     if (!el) return null;
-    if (el.dataset.drop === "root") return { kind: "root", rowKey: "root" };
-    const row = rows.find((r) => r.key === el.dataset.drop);
-    if (!row) return null;
     const rect = el.getBoundingClientRect();
     const offset = (y - rect.top) / rect.height;
     const dragged = dragging.dragged;
+
+    // Избранное переставляется только внутри своего списка.
+    const favorite = favorites.find((e) => `f:${e.id}` === el.dataset.drop);
+    if (dragged.kind === "favorite" || favorite) {
+      if (dragged.kind !== "favorite" || !favorite || favorite.id === dragged.entry.id) return null;
+      const rowKey = `f:${favorite.id}`;
+      return offset < 0.5
+        ? { kind: "before-favorite", entry: favorite, rowKey }
+        : { kind: "after-favorite", entry: favorite, rowKey };
+    }
+
+    if (el.dataset.drop === "root") return { kind: "root", rowKey: "root" };
+    const row = rows.find((r) => r.key === el.dataset.drop);
+    if (!row) return null;
 
     if (dragged.kind === "entry") {
       if (row.kind === "group") return { kind: "into", path: row.path, rowKey: row.key };
@@ -356,6 +401,14 @@
   }
 
   async function drop(dragged: Dragged, where: Target) {
+    if (dragged.kind === "favorite") {
+      if (where.kind !== "before-favorite" && where.kind !== "after-favorite") return;
+      const ids = favorites.map((e) => e.id).filter((id) => id !== dragged.entry.id);
+      const at = ids.indexOf(where.entry.id) + (where.kind === "after-favorite" ? 1 : 0);
+      ids.splice(at, 0, dragged.entry.id);
+      await saveFavoriteOrder(ids);
+      return;
+    }
     try {
       if (dragged.kind === "entry") {
         const id = dragged.entry.id;
@@ -383,14 +436,16 @@
 
   function dropClass(rowKey: string): string {
     if (!target || target.rowKey !== rowKey) return "";
-    if (target.kind === "before-entry" || target.kind === "before-section") return "drop-before";
-    if (target.kind === "after-entry") return "drop-after";
+    if (target.kind === "before-entry" || target.kind === "before-section" || target.kind === "before-favorite") {
+      return "drop-before";
+    }
+    if (target.kind === "after-entry" || target.kind === "after-favorite") return "drop-after";
     return "drop-into";
   }
 
   function isDragged(row: Row): boolean {
     const d = dragging?.dragged;
-    if (!d) return false;
+    if (!d || d.kind === "favorite") return false;
     if (d.kind === "entry") return row.kind === "entry" && row.entry.id === d.entry.id;
     const path = row.kind === "group" ? row.path : row.entry.path;
     return startsWith(path, d.path);
@@ -477,10 +532,14 @@
         {#each favoritesShown as entry (entry.id)}
           <button
             type="button"
-            class="entry fav"
+            class="entry fav {dropClass(`f:${entry.id}`)}"
             class:on={favCursor && entry.id === vault.selectedId}
+            class:faded={dragging?.dragged.kind === "favorite" && dragging.dragged.entry.id === entry.id}
             data-nav="f:{entry.id}"
+            data-drop="f:{entry.id}"
+            onpointerdown={(e) => startPress(e, { kind: "favorite", entry }, entry.title)}
             onclick={() => {
+              if (suppressClick) return;
               vault.selectedId = entry.id;
               vault.selectedSection = null;
               cursorIn = "fav";
@@ -551,7 +610,7 @@
           </button>
         {/if}
       {/each}
-      {#if dragging}
+      {#if dragging && dragging.dragged.kind !== "favorite"}
         <div class="root-drop mono {dropClass('root')}" data-drop="root">Перетащите сюда, чтобы перенести на верхний уровень</div>
       {/if}
     </nav>

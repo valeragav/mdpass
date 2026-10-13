@@ -9,7 +9,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use mdpass_core::format::{EntryDraft, Field};
+use mdpass_core::format::{EntryDraft, Favorite, Field};
 use mdpass_core::password;
 use mdpass_core::vault::{Passphrase, Vault, VaultOptions};
 
@@ -25,7 +25,7 @@ fn entry(path: &[&str], title: &str, fields: &[(&str, &str)], tags: &[&str]) -> 
             })
             .collect(),
         tags: tags.iter().map(|s| s.to_string()).collect(),
-        favorite: false,
+        favorite: Favorite::No,
     }
 }
 

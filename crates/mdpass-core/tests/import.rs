@@ -1,4 +1,4 @@
-use mdpass_core::format::{Document, EntryDraft, Field};
+use mdpass_core::format::{Document, EntryDraft, Favorite, Field};
 use mdpass_core::importer::{Fixes, IssueKind, analyze, convert_legacy_entries, merge_into, stats};
 
 /// Выдуманный открытый файл с теми же неровностями, что бывают в ручных заметках.
@@ -131,7 +131,7 @@ fn import_into_a_filled_vault_appends_entries_and_keeps_loose_lines_as_a_note() 
             title: "старая".into(),
             fields: vec![Field::new("k", "v")],
             tags: vec![],
-            favorite: false,
+            favorite: Favorite::No,
         })
         .unwrap();
     assert_eq!(merge_into(&mut vault, &result).unwrap(), 5);
@@ -152,7 +152,7 @@ fn odd_sections_keys_and_tags_do_not_stop_an_import() {
             title: "есть".into(),
             fields: vec![Field::new("k", "v")],
             tags: vec![],
-            favorite: false,
+            favorite: Favorite::No,
         })
         .unwrap();
     assert_eq!(merge_into(&mut vault, &result).unwrap(), 1);

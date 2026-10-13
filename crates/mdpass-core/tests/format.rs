@@ -1,4 +1,4 @@
-use mdpass_core::format::{Document, EntryDraft, Field, FormatError};
+use mdpass_core::format::{Document, EntryDraft, Favorite, Field, FormatError};
 
 fn field(key: &str, value: &str) -> Field {
     Field::new(key, value)
@@ -10,7 +10,7 @@ fn draft(path: &[&str], title: &str, fields: Vec<Field>, tags: &[&str]) -> Entry
         title: title.to_string(),
         fields,
         tags: tags.iter().map(|s| s.to_string()).collect(),
-        favorite: false,
+        favorite: Favorite::No,
     }
 }
 
@@ -337,13 +337,14 @@ fn indented_line_without_a_key_does_not_join_a_field_after_an_edit() {
 
 #[test]
 fn favorite_line_marks_the_entry() {
-    let doc = Document::parse("**a**\nk: v\nFavorite: TRUE\n\n**b**\nfavorite: false\n\n**c**\nfavorite: pizza\n");
+    let doc =
+        Document::parse("**a**\nk: v\nFavorite: TRUE\n\n**b**\nfavorite: Favorite::No\n\n**c**\nfavorite: pizza\n");
     let entries = doc.entries();
-    assert!(entries[0].favorite);
+    assert_eq!(entries[0].favorite, Favorite::Yes);
     assert!(entries[0].fields.iter().all(|f| f.key != "Favorite"));
-    assert!(!entries[1].favorite);
+    assert_eq!(entries[1].favorite, Favorite::No);
     // Строка с другим значением — не признак: она остаётся в записи как есть.
-    assert!(!entries[2].favorite);
+    assert_eq!(entries[2].favorite, Favorite::No);
     assert_eq!(entries[2].extra, ["favorite: pizza"]);
 }
 
@@ -358,10 +359,10 @@ fn favorite_is_written_after_tags_and_before_the_note() {
 
     let mut doc = Document::default();
     let mut d = draft(&["work"], "b", vec![field("k", "v")], &[]);
-    d.favorite = true;
+    d.favorite = Favorite::Yes;
     let id = doc.add(d).unwrap();
     assert_eq!(doc.to_markdown(), "# work\n\n**b**\nk: v\nfavorite: true\n");
-    assert!(doc.entry(id).unwrap().favorite);
+    assert!(doc.entry(id).unwrap().favorite.is_on());
 }
 
 #[test]
@@ -378,4 +379,35 @@ fn favorite_is_a_reserved_key() {
     let mut doc = Document::default();
     let err = doc.add(draft(&[], "a", vec![field("favorite", "true")], &[])).unwrap_err();
     assert_eq!(err, FormatError::InvalidKey("favorite".into()));
+}
+
+#[test]
+fn favorite_number_is_its_place() {
+    let doc = Document::parse("**a**\nfavorite: 2\n\n**b**\nfavorite: 1\n");
+    let places: Vec<Favorite> = doc.entries().iter().map(|e| e.favorite).collect();
+    assert_eq!(places, [Favorite::At(2), Favorite::At(1)]);
+    assert_eq!(doc.to_markdown(), "**a**\nfavorite: 2\n\n**b**\nfavorite: 1\n");
+}
+
+#[test]
+fn ordering_favorites_numbers_them_and_keeps_untouched_entries() {
+    let source = "**a**\nk:v\nfavorite: true\n\n**b**\nk:v\nfavorite: 2\n\n**c**\nk:v\n";
+    let mut doc = Document::parse(source);
+    let ids: Vec<_> = doc.entries().iter().map(|e| e.id).collect();
+    doc.order_favorites(&[ids[0], ids[1]]).unwrap();
+    // У «b» номер не изменился: запись выводится как была, со слитным «k:v».
+    assert_eq!(doc.to_markdown(), "**a**\nk: v\nfavorite: 1\n\n**b**\nk:v\nfavorite: 2\n\n**c**\nk:v\n");
+    doc.order_favorites(&[ids[1], ids[0]]).unwrap();
+    assert_eq!(doc.entry(ids[1]).unwrap().favorite, Favorite::At(1));
+    assert_eq!(doc.entry(ids[0]).unwrap().favorite, Favorite::At(2));
+}
+
+#[test]
+fn new_favorite_goes_after_numbered_ones() {
+    let mut doc = Document::parse("**a**\nfavorite: 3\n\n**b**\nk: v\n");
+    let b = doc.entries()[1].id;
+    doc.set_favorite(b, true).unwrap();
+    assert_eq!(doc.entry(b).unwrap().favorite, Favorite::At(4));
+    doc.set_favorite(b, false).unwrap();
+    assert_eq!(doc.entry(b).unwrap().favorite, Favorite::No);
 }

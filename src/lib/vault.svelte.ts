@@ -52,6 +52,13 @@ export async function deleteEntry(entryId: number, title: string) {
   showToast(`Запись «${title}» удалена`);
 }
 
+/// Избранное по порядку: сначала записи с номером, по возрастанию, потом без номера,
+/// в порядке файла.
+export function favoritesInOrder(entries: EntryView[]): EntryView[] {
+  const rank = (e: EntryView) => e.favoriteOrder ?? Infinity;
+  return entries.filter((e) => e.favorite).sort((a, b) => rank(a) - rank(b));
+}
+
 export async function toggleFavorite(entry: EntryView) {
   await api.setFavorite(entry.id, !entry.favorite);
   await loadEntries();

@@ -1,6 +1,6 @@
 //! Проверки формата на случайных файлах и случайных цепочках операций.
 
-use mdpass_core::format::{Document, Entry, EntryDraft, Field};
+use mdpass_core::format::{Document, Entry, EntryDraft, Favorite, Field};
 use proptest::prelude::*;
 
 /// Строки, из которых состоят файлы хранилища, и немного мусора вокруг них.
@@ -80,7 +80,7 @@ fn draft(path: Vec<String>, title: String, value: String) -> EntryDraft {
         title,
         fields: vec![Field::new("login", value), Field::new("password", "p")],
         tags: vec![],
-        favorite: false,
+        favorite: Favorite::No,
     }
 }
 

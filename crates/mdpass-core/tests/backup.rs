@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use mdpass_core::backup::{BackupKind, BackupStore, restore_damaged};
 use mdpass_core::diff::{Change, diff};
-use mdpass_core::format::{Document, EntryDraft, Field};
+use mdpass_core::format::{Document, EntryDraft, Favorite, Field};
 use mdpass_core::vault::{Passphrase, Vault, VaultError, VaultOptions};
 use tempfile::TempDir;
 
@@ -23,7 +23,7 @@ fn draft(title: &str, password: &str) -> EntryDraft {
         title: title.into(),
         fields: vec![Field::new("login", "admin"), Field::new("password", password)],
         tags: vec![],
-        favorite: false,
+        favorite: Favorite::No,
     }
 }
 

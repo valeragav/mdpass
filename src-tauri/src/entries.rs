@@ -4,7 +4,7 @@
 //! только по явному действию: «показать» или «скопировать».
 
 use mdpass_core::backup::BackupKind;
-use mdpass_core::format::{Document, Entry, EntryDraft, EntryId, Field, FormatError};
+use mdpass_core::format::{Document, Entry, EntryDraft, EntryId, Favorite, Field, FormatError};
 use mdpass_core::password;
 use serde::{Deserialize, Serialize};
 use tauri::State;
@@ -22,6 +22,8 @@ pub struct EntryView {
     title: String,
     tags: Vec<String>,
     favorite: bool,
+    /// Номер в избранном из строки `favorite: 2`. `None` — без номера или не в избранном.
+    favorite_order: Option<u32>,
     fields: Vec<FieldView>,
 }
 
@@ -41,7 +43,11 @@ impl From<&Entry> for EntryView {
             path: entry.path.clone(),
             title: entry.title.clone(),
             tags: entry.tags.clone(),
-            favorite: entry.favorite,
+            favorite: entry.favorite.is_on(),
+            favorite_order: match entry.favorite {
+                Favorite::At(n) => Some(n),
+                _ => None,
+            },
             fields: entry
                 .fields
                 .iter()
@@ -146,7 +152,13 @@ impl DraftInput {
                 Field { key: input.key, value, secret: input.secret }
             })
             .collect();
-        EntryDraft { path: self.path, title: self.title, fields, tags: self.tags, favorite: self.favorite }
+        // Форма знает только «в избранном или нет». Место в избранном остаётся прежним.
+        let favorite = match (self.favorite, current.map(|entry| entry.favorite)) {
+            (false, _) => Favorite::No,
+            (true, Some(kept)) if kept.is_on() => kept,
+            (true, _) => Favorite::Yes,
+        };
+        EntryDraft { path: self.path, title: self.title, fields, tags: self.tags, favorite }
     }
 }
 
@@ -211,6 +223,18 @@ pub async fn set_favorite(state: State<'_, AppState>, entry_id: u64, favorite: b
     run_blocking(move || {
         let mut session = state.lock();
         edit(&mut session, BackupKind::Update, |doc| doc.set_favorite(EntryId::from_raw(entry_id), favorite))
+    })
+    .await
+}
+
+/// Порядок избранного: записи `entry_ids` получают номера 1, 2, 3…
+#[tauri::command]
+pub async fn order_favorites(state: State<'_, AppState>, entry_ids: Vec<u64>) -> Result<(), CommandError> {
+    let state = state.inner().clone();
+    run_blocking(move || {
+        let mut session = state.lock();
+        let ids: Vec<EntryId> = entry_ids.into_iter().map(EntryId::from_raw).collect();
+        edit(&mut session, BackupKind::Move, |doc| doc.order_favorites(&ids))
     })
     .await
 }

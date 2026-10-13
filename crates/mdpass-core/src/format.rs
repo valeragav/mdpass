@@ -10,7 +10,7 @@
 //! note: первая строка
 //!   вторая строка        ← продолжение значения, отступ в два пробела
 //! tags: [work], [prod]   ← теги
-//! favorite: true         ← запись в избранном
+//! favorite: 2            ← запись в избранном, вторая по порядку; `true` — без номера
 //! ```
 //!
 //! Первая строка файла — метка формата `<!-- mdpass:1 -->`. В редакторах Markdown
@@ -94,6 +94,23 @@ impl fmt::Debug for Field {
     }
 }
 
+/// Место записи в избранном: строка `favorite: 2` или `favorite: true`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Favorite {
+    #[default]
+    No,
+    /// `favorite: true`: в избранном, после записей с номерами.
+    Yes,
+    /// `favorite: 2`: в избранном на этом месте. Номера идут по возрастанию.
+    At(u32),
+}
+
+impl Favorite {
+    pub fn is_on(self) -> bool {
+        self != Self::No
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Entry {
     pub id: EntryId,
@@ -102,8 +119,7 @@ pub struct Entry {
     pub title: String,
     pub fields: Vec<Field>,
     pub tags: Vec<String>,
-    /// Строка `favorite: true`: запись показывается в списке «Избранное».
-    pub favorite: bool,
+    pub favorite: Favorite,
     /// Строки записи, которые не похожи на поле «ключ: значение».
     pub extra: Vec<String>,
 }
@@ -115,7 +131,7 @@ pub struct EntryDraft {
     pub title: String,
     pub fields: Vec<Field>,
     pub tags: Vec<String>,
-    pub favorite: bool,
+    pub favorite: Favorite,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -214,7 +230,7 @@ struct EntryNode {
     title: String,
     fields: Vec<Field>,
     tags: Vec<String>,
-    favorite: bool,
+    favorite: Favorite,
     /// Строки записи, которые не похожи на поле. Сохраняются как есть.
     extra: Vec<String>,
     trailing_blank: usize,
@@ -392,13 +408,41 @@ impl Document {
     }
 
     /// Добавляет запись в избранное или убирает из него. Остальное в записи не меняется.
+    /// Новая избранная запись встаёт в конец списка.
     pub fn set_favorite(&mut self, id: EntryId, favorite: bool) -> Result<(), FormatError> {
         let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+        let last = self.nodes.iter().filter_map(|node| match node {
+            Node::Entry(e) => match e.favorite {
+                Favorite::At(n) => Some(n),
+                _ => None,
+            },
+            _ => None,
+        });
+        let next = match last.max() {
+            Some(n) => Favorite::At(n + 1),
+            None => Favorite::Yes,
+        };
         if let Node::Entry(entry) = &mut self.nodes[index]
-            && entry.favorite != favorite
+            && entry.favorite.is_on() != favorite
         {
-            entry.favorite = favorite;
+            entry.favorite = if favorite { next } else { Favorite::No };
             entry.raw = None;
+        }
+        Ok(())
+    }
+
+    /// Порядок избранного: записи получают номера 1, 2, 3… в порядке `ids`.
+    /// Меняются только записи, у которых номер стал другим.
+    pub fn order_favorites(&mut self, ids: &[EntryId]) -> Result<(), FormatError> {
+        let indexes: Vec<usize> =
+            ids.iter().map(|&id| self.entry_index(id).ok_or(FormatError::NotFound)).collect::<Result<_, _>>()?;
+        for (place, index) in indexes.into_iter().enumerate() {
+            let Node::Entry(entry) = &mut self.nodes[index] else { unreachable!() };
+            let favorite = Favorite::At(place as u32 + 1);
+            if entry.favorite != favorite {
+                entry.favorite = favorite;
+                entry.raw = None;
+            }
         }
         Ok(())
     }
@@ -740,7 +784,7 @@ pub(crate) fn entry_title_of(line: &str) -> Option<&str> {
 enum FieldLine {
     Field(Field),
     Tags(Vec<String>),
-    Favorite(bool),
+    Favorite(Favorite),
 }
 
 fn parse_field(line: &str) -> Option<FieldLine> {
@@ -756,9 +800,9 @@ fn parse_field(line: &str) -> Option<FieldLine> {
     if key.eq_ignore_ascii_case(FAVORITE_KEY) {
         // Другое значение — не признак избранного: строка останется в записи как есть.
         return match value.to_ascii_lowercase().as_str() {
-            "true" => Some(FieldLine::Favorite(true)),
-            "false" => Some(FieldLine::Favorite(false)),
-            _ => None,
+            "true" => Some(FieldLine::Favorite(Favorite::Yes)),
+            "false" => Some(FieldLine::Favorite(Favorite::No)),
+            number => number.parse().ok().map(|n| FieldLine::Favorite(Favorite::At(n))),
         };
     }
     let (key, marked) = match key.strip_suffix(SECRET_MARKER) {
@@ -787,7 +831,7 @@ fn parse_tags(value: &str) -> Vec<String> {
 fn parse_entry(id: EntryId, title: String, body: &[&str]) -> EntryNode {
     let mut fields: Vec<Field> = Vec::new();
     let mut tags = Vec::new();
-    let mut favorite = false;
+    let mut favorite = Favorite::No;
     let mut extra = Vec::new();
     let mut continues = false;
     for line in body {
@@ -812,7 +856,7 @@ fn parse_entry(id: EntryId, title: String, body: &[&str]) -> EntryNode {
                 continues = true;
             }
             Some(FieldLine::Tags(found)) => tags.extend(found),
-            Some(FieldLine::Favorite(on)) => favorite = on,
+            Some(FieldLine::Favorite(found)) => favorite = found,
             None => extra.push(line.to_string()),
         }
     }
@@ -882,11 +926,15 @@ fn render_marks(entry: &EntryNode, eol: &str, out: &mut String) {
         out.push_str(&list.join(", "));
         out.push_str(eol);
     }
-    if entry.favorite {
-        out.push_str(FAVORITE_KEY);
-        out.push_str(": true");
-        out.push_str(eol);
-    }
+    let favorite = match entry.favorite {
+        Favorite::No => return,
+        Favorite::Yes => "true".to_string(),
+        Favorite::At(n) => n.to_string(),
+    };
+    out.push_str(FAVORITE_KEY);
+    out.push_str(": ");
+    out.push_str(&favorite);
+    out.push_str(eol);
 }
 
 /// Можно ли записать поле с таким ключом так, чтобы оно прочиталось обратно полем.

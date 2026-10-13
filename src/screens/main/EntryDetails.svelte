@@ -38,6 +38,7 @@
       title: entry.title,
       tags: entry.tags,
       favorite: entry.favorite,
+      favoriteOrder: entry.favoriteOrder,
       fields: entry.fields.map((field, index) => ({ key: field.key, value: shownValue(entry, index) })),
     }),
   );

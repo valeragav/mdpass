@@ -22,6 +22,7 @@ export interface PreviewEntry {
   title: string;
   tags: string[];
   favorite: boolean;
+  favoriteOrder: number | null;
   /// `value: null` — значение скрыто и показывается точками.
   fields: { key: string; value: string | null }[];
 }
@@ -42,7 +43,9 @@ export function previewLines(entry: PreviewEntry): PreviewLine[] {
   if (entry.tags.length) {
     marks.push({ prefix: "", key: "tags:", value: " " + entry.tags.map((t) => `[${t}]`).join(", "), tone: "plain" });
   }
-  if (entry.favorite) marks.push({ prefix: "", key: "favorite:", value: " true", tone: "plain" });
+  if (entry.favorite) {
+    marks.push({ prefix: "", key: "favorite:", value: " " + (entry.favoriteOrder ?? "true"), tone: "plain" });
+  }
   // Теги и избранное пишутся перед заметкой, если она есть.
   const noteAt = entry.fields.findIndex((f) => f.key.toLowerCase() === "note");
   entry.fields.forEach((field, i) => {

@@ -144,6 +144,7 @@ pub fn run() {
             entries::update_entry,
             entries::delete_entry,
             entries::set_favorite,
+            entries::order_favorites,
             entries::generate_password,
             entries::move_entry,
             entries::move_section,

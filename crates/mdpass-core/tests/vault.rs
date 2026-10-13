@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use mdpass_core::format::{EntryDraft, Field};
+use mdpass_core::format::{EntryDraft, Favorite, Field};
 use mdpass_core::vault::{AttemptLimiter, Passphrase, Vault, VaultError, VaultOptions};
 use tempfile::TempDir;
 
@@ -23,7 +23,7 @@ fn sample_draft() -> EntryDraft {
         title: "alpha".into(),
         fields: vec![Field::new("ssh", "h"), Field::new("password", "p")],
         tags: vec![],
-        favorite: false,
+        favorite: Favorite::No,
     }
 }
 
