@@ -1,6 +1,7 @@
 // Команды Rust-части. Типы повторяют `src-tauri/src/commands.rs`.
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { IS_MOBILE } from "./platform";
 
 export interface VaultFile {
   path: string;
@@ -258,6 +259,9 @@ const VAULT_FILTERS = [{ name: "Хранилище mdpass", extensions: ["age", 
 export const api = {
   status: () => invoke<Status>("status"),
   describePath: (path: string) => invoke<VaultFile>("describe_path", { path }),
+  /// Файл из диалога. На телефоне диалог отдаёт адрес content://, и Rust копирует файл
+  /// в папку приложения: хранилище — насовсем, файл для импорта — до конца импорта.
+  adoptFile: (path: string, purpose: "vault" | "import") => invoke<VaultFile>("adopt_file", { path, purpose }),
   createVault: (path: string, passphrase: string | null, protection: Protection) =>
     invoke<Protection>("create_vault", { path, passphrase, protection }),
   /// `passphrase: null` — открыть хранилище без шифрования.
@@ -330,7 +334,7 @@ export const api = {
       filters: [{ name: "Markdown", extensions: ["md", "markdown", "txt"] }],
       title: "Файл с паролями для импорта",
     });
-    return typeof path === "string" ? api.describePath(path) : null;
+    return typeof path === "string" ? api.adoptFile(path, "import") : null;
   },
 
   /// Диалог выбора места для нового хранилища.
@@ -341,7 +345,9 @@ export const api = {
 
   /// Диалог выбора существующего хранилища.
   async pickExistingVault(): Promise<VaultFile | null> {
-    const path = await open({ multiple: false, directory: false, filters: VAULT_FILTERS, title: "Открыть хранилище" });
-    return typeof path === "string" ? api.describePath(path) : null;
+    // Android не знает тип .age и не даёт выбрать такой файл с фильтром: на телефоне без фильтра.
+    const filters = IS_MOBILE ? undefined : VAULT_FILTERS;
+    const path = await open({ multiple: false, directory: false, filters, title: "Открыть хранилище" });
+    return typeof path === "string" ? api.adoptFile(path, "vault") : null;
   },
 };

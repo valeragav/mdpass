@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { api, errorText, type ImportFixes, type ImportIssue, type ImportPreview, type VaultFile } from "../lib/api";
   import { app, go } from "../lib/nav.svelte";
+  import { IS_MOBILE } from "../lib/platform";
   import { plural } from "../lib/text";
   import { showToast } from "../lib/toast.svelte";
   import Button from "../lib/ui/Button.svelte";
@@ -19,6 +20,7 @@
   let error = $state<string | null>(null);
   let busy = $state(false);
   let askDelete = $state(false);
+  let askForget = $state(false);
 
   onMount(pick);
 
@@ -110,7 +112,8 @@
       const count = await api.runImport(source.path, fixes);
       await loadEntries();
       showToast(`Импортировано ${count} ${plural(count, ["запись", "записи", "записей"])}`);
-      askDelete = true;
+      if (IS_MOBILE) askForget = true;
+      else askDelete = true;
     } catch (err) {
       error = errorText(err);
     } finally {
@@ -227,6 +230,15 @@
     </div>
   </div>
 </div>
+
+<!-- Телефон: приложение работало с копией файла и уже удалило её. Сам файл удалить
+     из приложения нельзя. -->
+<ConfirmDialog open={askForget} title="Удалите исходный файл" icon="warning" oncancel={() => go("main")}>
+  Записи уже в хранилище. В {source?.name} пароли лежат открытым текстом: удалите его в приложении «Файлы».
+  {#snippet actions()}
+    <Button autofocus variant="primary" onclick={() => go("main")}>Понятно</Button>
+  {/snippet}
+</ConfirmDialog>
 
 <ConfirmDialog open={askDelete} title="Удалить исходный файл?" icon="trash" tone="danger" oncancel={() => go("main")}>
   Записи уже в хранилище. В {source?.name} пароли лежат открытым текстом: его лучше удалить. Файл удалится сразу, без

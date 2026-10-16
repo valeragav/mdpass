@@ -272,6 +272,7 @@ mockIPC(
         settings,
       };
     case "describe_path":
+    case "adopt_file":
       return describe(a.path);
     case "create_vault":
       unlocked = true;

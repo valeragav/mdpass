@@ -169,7 +169,13 @@ pub struct Status {
 #[tauri::command(async)]
 pub fn status<R: Runtime>(app: AppHandle<R>, state: State<'_, AppState>) -> Status {
     let session = state.lock();
-    let default_vault = app.path().document_dir().ok().map(|dir| describe(&app, &dir.join(DEFAULT_FILE_NAME)));
+    // На телефоне хранилище по умолчанию — в личной папке приложения: в общие папки
+    // Android обычной записью файла не пускает.
+    #[cfg(desktop)]
+    let dir = app.path().document_dir();
+    #[cfg(mobile)]
+    let dir = app.path().app_data_dir();
+    let default_vault = dir.ok().map(|dir| describe(&app, &dir.join(DEFAULT_FILE_NAME)));
     Status {
         unlocked: session.vault.is_some(),
         last_vault: session.config.last_vault.as_deref().map(|path| describe(&app, path)),

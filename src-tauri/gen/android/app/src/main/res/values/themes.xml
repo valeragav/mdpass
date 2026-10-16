@@ -1,0 +1,8 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.mdpass" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Фон окна — как у приложения: он виден под системными панелями
+             и пока загружается интерфейс. -->
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
+</resources>

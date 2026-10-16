@@ -8,6 +8,21 @@ edition = "2024"
 license = "MIT"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
+# Шифрование с надёжной защитой (scrypt) без оптимизаций идёт в десятки раз
+# дольше: в отладочной сборке, особенно на телефоне, хранилище открывалось бы
+# минуту. Криптографию оптимизируем и в отладке.
+[profile.dev.package]
+age = { opt-level = 3 }
+age-core = { opt-level = 3 }
+scrypt = { opt-level = 3 }
+salsa20 = { opt-level = 3 }
+pbkdf2 = { opt-level = 3 }
+sha2 = { opt-level = 3 }
+hmac = { opt-level = 3 }
+chacha20poly1305 = { opt-level = 3 }
+chacha20 = { opt-level = 3 }
+poly1305 = { opt-level = 3 }
+
 [profile.release]
 codegen-units = 1
 lto = true

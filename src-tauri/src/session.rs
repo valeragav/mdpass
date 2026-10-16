@@ -92,7 +92,6 @@ impl Session {
         self.conflicts.clear();
         self.sync_state = None;
         self.cloud_status = crate::cloud::SyncStatus::Idle;
-        #[cfg(desktop)]
         crate::clipboard::clear_ours();
     }
 
