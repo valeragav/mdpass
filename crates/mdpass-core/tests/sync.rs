@@ -21,7 +21,10 @@ fn stamp_goes_right_after_the_format_header() {
     let first = restamp(&mut doc, &[]);
     assert!(first.parents.is_empty());
     let text = doc.to_markdown();
-    assert_eq!(text, format!("<!-- mdpass:1 -->\n<!-- mdpass-sync rev={} -->\n\n**a**\nk: v\n", first.rev));
+    assert_eq!(
+        text,
+        format!("<!-- mdpass:1 -->\n<!-- mdpass-sync rev={} at={} -->\n\n**a**\nk: v\n", first.rev, first.at.unwrap())
+    );
     assert_eq!(stamp(&Document::parse(&text)), Some(first));
 }
 
@@ -29,14 +32,18 @@ fn stamp_goes_right_after_the_format_header() {
 fn file_without_header_gets_both_lines() {
     let mut doc = Document::parse("**a**\nk: v\n");
     let s = restamp(&mut doc, &[]);
-    assert_eq!(doc.to_markdown(), format!("<!-- mdpass:1 -->\n<!-- mdpass-sync rev={} -->\n\n**a**\nk: v\n", s.rev));
+    assert_eq!(
+        doc.to_markdown(),
+        format!("<!-- mdpass:1 -->\n<!-- mdpass-sync rev={} at={} -->\n\n**a**\nk: v\n", s.rev, s.at.unwrap())
+    );
 }
 
 #[test]
 fn crlf_file_keeps_its_line_ends() {
     let mut doc = Document::parse("<!-- mdpass:1 -->\r\n\r\n**a**\r\nk: v\r\n");
     let s = restamp(&mut doc, &[]);
-    assert!(doc.to_markdown().starts_with(&format!("<!-- mdpass:1 -->\r\n<!-- mdpass-sync rev={} -->\r\n\r\n", s.rev)));
+    let header = format!("<!-- mdpass:1 -->\r\n<!-- mdpass-sync rev={} at={} -->\r\n\r\n", s.rev, s.at.unwrap());
+    assert!(doc.to_markdown().starts_with(&header));
 }
 
 #[test]
@@ -150,4 +157,38 @@ fn old_app_keeps_the_stamp_line_untouched() {
     let id = doc.entries()[0].id;
     doc.update(id, entry("b")).unwrap();
     assert!(doc.to_markdown().starts_with("<!-- mdpass:1 -->\n<!-- mdpass-sync rev=ab12 -->\n"));
+}
+
+#[test]
+fn device_name_and_time_round_trip() {
+    use mdpass_core::sync::restamp_as;
+    let mut doc = Document::default();
+    let written = restamp_as(&mut doc, &[], Some("Рабочий ПК-2 <-->"));
+    let line = doc.to_markdown().lines().nth(1).unwrap().to_string();
+    // В строке нет пробелов и «-->» из имени: они бы её сломали.
+    assert!(!line.contains("ПК-2") && !line.contains("<-->"), "{line}");
+    let read = stamp(&Document::parse(&doc.to_markdown())).unwrap();
+    assert_eq!(read.device.as_deref(), Some("Рабочий ПК-2 <-->"));
+    assert_eq!(read, written);
+    assert!(read.at.unwrap() > 1_700_000_000);
+}
+
+#[test]
+fn device_name_is_written_only_into_an_encrypted_vault() {
+    use mdpass_core::sync::set_device_name;
+    use mdpass_core::vault::VaultOptions;
+    set_device_name(Some("Ноутбук".into()));
+    let dir = TempDir::new().unwrap();
+
+    let plain = Vault::create_plain(&dir.path().join("plain.md")).unwrap();
+    assert_eq!(stamp(plain.document()).unwrap().device, None);
+
+    let encrypted = Vault::create(
+        &dir.path().join("vault.md.age"),
+        mdpass_core::vault::Passphrase::from("p".to_string()),
+        VaultOptions { work_factor: 4 },
+    )
+    .unwrap();
+    assert_eq!(stamp(encrypted.document()).unwrap().device.as_deref(), Some("Ноутбук"));
+    set_device_name(None);
 }

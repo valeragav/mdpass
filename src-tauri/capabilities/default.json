@@ -8,10 +8,6 @@
   "permissions": [
     "core:default",
     "opener:allow-reveal-item-in-dir",
-    {
-      "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "https://oauth.yandex.ru/*" }]
-    },
     "dialog:allow-open",
     "dialog:allow-save"
   ]

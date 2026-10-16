@@ -13,7 +13,7 @@ use zeroize::Zeroizing;
 
 use crate::backups::{BackupPolicy, no_backup};
 use crate::commands::{CommandError, run_blocking};
-use crate::session::{AppState, MergeNotice, Session};
+use crate::session::{AppState, Session};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -113,18 +113,8 @@ pub fn copy_field(state: State<'_, AppState>, entry_id: u64, field: usize) -> Re
 
 /// Кладёт значение в буфер обмена и очищает его через время из настроек.
 pub(crate) fn copy_to_clipboard(session: &Session, value: Zeroizing<String>) -> Result<(), CommandError> {
-    #[cfg(desktop)]
-    {
-        crate::clipboard::copy(value, session.clipboard_clear_after())
-            .map_err(|err| CommandError::Clipboard { message: err.to_string() })
-    }
-    #[cfg(mobile)]
-    {
-        drop(value);
-        Err(CommandError::Clipboard {
-            message: "буфер обмена на телефоне пока не поддерживается".into()
-        })
-    }
+    crate::clipboard::copy(value, session.clipboard_clear_after())
+        .map_err(|err| CommandError::Clipboard { message: err.to_string() })
 }
 
 /// Запись из формы редактирования.
@@ -243,15 +233,8 @@ pub(crate) fn edit_with<T: AfterMerge>(
     crate::cloud::wake();
     let Some(merged) = saved.merged else { return Ok(result) };
     log::info!("файл изменили вне приложения: изменения слиты, конфликтов {}", merged.conflicts.len());
-    let both_kept = merged.conflicts.iter().filter_map(|c| c.mine.as_ref().map(|e| e.title.clone())).collect();
-    session.merge_notice = Some(MergeNotice { both_kept });
+    crate::conflicts::remember(session, &merged);
     Ok(result.after_merge(&merged))
-}
-
-/// Забирает уведомление о слиянии, если оно есть.
-#[tauri::command]
-pub fn take_merge_notice(state: State<'_, AppState>) -> Option<MergeNotice> {
-    state.lock().merge_notice.take()
 }
 
 #[tauri::command]

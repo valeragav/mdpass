@@ -24,6 +24,7 @@
   import { IS_MAC, keyLabel, SHORTCUTS } from "../lib/shortcuts";
   import { cloud, refreshCloud, statusText } from "../lib/cloud.svelte";
   import CloudConnect from "../lib/ui/CloudConnect.svelte";
+  import { layout } from "../lib/layout.svelte";
   import ChangeProtection from "./settings/ChangeProtection.svelte";
   import RenameVault from "./settings/RenameVault.svelte";
 
@@ -58,6 +59,21 @@
   ];
 
   let tab = $state<Tab>(lastTab);
+  /// Телефон: сначала список разделов, раздел открывается отдельным экраном.
+  let listing = $state(true);
+  /// Горячие клавиши на телефоне не нужны: клавиатуры нет.
+  let tabs = $derived(layout.narrow ? TABS.filter(([id]) => id !== "keys") : TABS);
+
+  function pickTab(id: Tab) {
+    tab = id;
+    listing = false;
+  }
+
+  /// «Назад»: на телефоне из раздела — к списку разделов, иначе — к записям.
+  function back() {
+    if (layout.narrow && !listing) listing = true;
+    else go("main");
+  }
   let backupsDir = $state<string | null>(null);
   $effect(() => {
     if (tab === "file" && backupsDir === null) api.backupsLocation().then((dir) => (backupsDir = dir), () => {});
@@ -150,17 +166,20 @@
 
 <div class="screen">
   <header>
-    <Button variant="ghost" size="sm" icon="back" onclick={() => go("main")}>Назад</Button>
-    <Logo size="sm" />
-    <span class="spacer"></span>
+    <Button variant="ghost" size="sm" icon="back" onclick={back}>Назад</Button>
+    {#if !layout.narrow}
+      <Logo size="sm" />
+      <span class="spacer"></span>
+    {/if}
   </header>
 
-  <div class="body">
+  <div class="body" class:listing={layout.narrow && listing} class:open={layout.narrow && !listing}>
     <nav aria-label="Разделы настроек">
       <div class="nav-title">Настройки</div>
-      {#each TABS as [id, label] (id)}
-        <button type="button" class="tab" class:on={tab === id} aria-current={tab === id ? "page" : undefined} onclick={() => (tab = id)}>
-          {label}
+      {#each tabs as [id, label] (id)}
+        <button type="button" class="tab" class:on={tab === id} aria-current={tab === id ? "page" : undefined} onclick={() => pickTab(id)}>
+          <span>{label}</span>
+          {#if layout.narrow}<Icon name="chevron" size={18} color="var(--text-faint)" />{/if}
         </button>
       {/each}
     </nav>
@@ -257,7 +276,7 @@
               <div>
                 <div class="name">Синхронизация</div>
                 <div class="hint">
-                  Хранилище синхронизируется между компьютерами через служебную папку приложения в облаке.
+                  Хранилище синхронизируется между устройствами через служебную папку приложения в облаке.
                   В облако уходит только зашифрованный файл
                 </div>
               </div>
@@ -661,5 +680,62 @@
     width: 30px;
     height: 30px;
     border-radius: 50%;
+  }
+
+  /* Узкий экран: сначала список разделов во всю ширину, раздел — отдельным экраном. */
+  @media (max-width: 640px) {
+    .spacer {
+      width: 0;
+    }
+
+    .body {
+      flex-direction: column;
+    }
+
+    .body.open nav,
+    .body.listing .content {
+      display: none;
+    }
+
+    nav {
+      flex: 1;
+      width: auto;
+      padding: 16px 12px;
+      border-right: 0;
+    }
+
+    .nav-title {
+      padding: 0 12px 8px;
+      font-family: var(--font-sans);
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-strong);
+    }
+
+    .tab {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 16px;
+      color: var(--text);
+    }
+
+    .tab.on {
+      background: none;
+    }
+
+    .content {
+      padding: 20px 16px 32px;
+    }
+
+    .row {
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .row:not(.stacked) > :first-child {
+      flex: 1 1 200px;
+    }
   }
 </style>

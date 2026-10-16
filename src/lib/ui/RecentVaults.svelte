@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { VaultFile } from "../api";
   import { app } from "../nav.svelte";
+  import { IS_MOBILE } from "../platform";
   import Icon from "./Icon.svelte";
 
   /// Выбор хранилища из недавних. Текущее в списке не показывается.
@@ -16,7 +17,12 @@
       <button type="button" class="item" class:missing={!file.exists} title={file.display} onclick={() => onpick(file)}>
         <Icon name={file.encrypted === false ? "unlock" : "lock"} size={14} />
         <span class="name">{file.name}</span>
-        <span class="where mono">{file.exists ? file.display : "файл не найден"}</span>
+        <!-- На телефоне все хранилища в папке приложения: путь ничего не говорит. -->
+        {#if !file.exists}
+          <span class="where mono">файл не найден</span>
+        {:else if !IS_MOBILE}
+          <span class="where mono">{file.display}</span>
+        {/if}
       </button>
     {/each}
   </div>

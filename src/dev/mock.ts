@@ -243,7 +243,13 @@ let settings = {
   accent: "#E5A93D",
   sidebarWidth: 320,
 };
-let mergeNotice: { bothKept: string[] } | null = null;
+// Конфликт слияния в заглушке: обе версии записи уже в списке, выбор их сворачивает.
+interface MockConflict {
+  title: string;
+  copyTitle: string;
+  path: string[];
+}
+let conflicts: MockConflict[] = [];
 // Облако в заглушке: подключается сразу, синхронизация — сразу.
 const cloudState = { provider: null as "yandex" | "google" | null, clientId: null as string | null, linked: false };
 let lastVault: string | null = `${HOME}/Documents/vault.md.age`;
@@ -266,6 +272,7 @@ mockIPC(
         settings,
       };
     case "describe_path":
+    case "adopt_file":
       return describe(a.path);
     case "create_vault":
       unlocked = true;
@@ -348,10 +355,48 @@ mockIPC(
       // Файл только что скачан: он есть и зашифрован.
       return { ...describe(path), exists: true, encrypted: true };
     }
-    case "take_merge_notice": {
-      const notice = mergeNotice;
-      mergeNotice = null;
-      return notice;
+    case "conflicts":
+      return conflicts.flatMap((c) => {
+        const original = ENTRIES.find((e) => e.title === c.title);
+        const copy = ENTRIES.find((e) => e.title === c.copyTitle);
+        if (!original || !copy) return [];
+        return [
+          {
+            kind: "edited",
+            path: c.path,
+            title: c.title,
+            entryId: original.id,
+            copyId: copy.id,
+            rows: [
+              { key: "password", part: false, secret: true, mine: null, theirs: null, mineField: 1, theirsField: 1 },
+              {
+                key: "url",
+                part: false,
+                secret: false,
+                mine: copy.fields[0].value,
+                theirs: original.fields[0].value,
+                mineField: 0,
+                theirsField: 0,
+              },
+            ],
+            theirDevice: "Ноутбук",
+            theirAtMs: Date.parse("2026-10-16T12:38:00"),
+            myAtMs: Date.parse("2026-10-16T12:41:00"),
+          },
+        ];
+      });
+    case "resolve_conflict": {
+      const { index, choice } = args as { index: number; choice: "mine" | "theirs" | "both" };
+      const c = conflicts[index];
+      if (!c) throw { kind: "entryNotFound" };
+      conflicts.splice(index, 1);
+      if (choice === "both") return null;
+      const original = ENTRIES.find((e) => e.title === c.title);
+      const copyAt = ENTRIES.findIndex((e) => e.title === c.copyTitle);
+      if (!original || copyAt < 0) throw { kind: "entryNotFound" };
+      if (choice === "mine") original.fields = ENTRIES[copyAt].fields;
+      ENTRIES.splice(copyAt, 1);
+      return null;
     }
     case "add_entry": {
       // Запись «конфликт» изображает файл, который изменили вне приложения так, что
@@ -360,11 +405,23 @@ mockIPC(
       if (title === "конфликт") throw { kind: "changedOnDisk" };
       const id = nextId++;
       const draft = (args as { draft: Draft }).draft;
-      ENTRIES.push({ id, ...applyDraft(draft) });
       if (title === "две версии") {
-        ENTRIES.push({ id: nextId++, ...applyDraft({ ...draft, title: `${title} (копия с этого устройства)` }) });
-        mergeNotice = { bothKept: [title] };
+        // Выдуманные значения: url и пароль на «Ноутбуке» и здесь разошлись.
+        const version = (url: string, password: string, copyTitle?: string) => ({
+          ...applyDraft(draft),
+          title: copyTitle ?? title,
+          fields: [
+            { key: "url", value: url, secret: false },
+            { key: "password", value: password, secret: true },
+          ],
+        });
+        ENTRIES.push({ id, ...version("https://web02.example.test", "Lk7#vQ2pZx") });
+        const copyTitle = `${title} (копия с этого устройства)`;
+        ENTRIES.push({ id: nextId++, ...version("https://web01.example.test", "mD4!rT8wNe", copyTitle) });
+        conflicts = [{ title, copyTitle, path: draft.path }];
+        return id;
       }
+      ENTRIES.push({ id, ...applyDraft(draft) });
       return id;
     }
     case "update_entry": {

@@ -338,8 +338,8 @@ pub async fn export_backup<R: Runtime>(
             .add_filter("Хранилище mdpass", &["age", "md"])
             .blocking_save_file();
         let Some(chosen) = chosen else { return Ok(false) };
-        let to = chosen.into_path().map_err(|err| CommandError::Io { message: err.to_string() })?;
-        store.export(&id, &to).map_err(io_error)?;
+        let bytes = store.read(&id).map_err(io_error)?;
+        crate::picked::write_chosen(&app, chosen, &bytes)?;
         Ok(true)
     })
     .await

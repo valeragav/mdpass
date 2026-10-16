@@ -21,7 +21,7 @@ use zeroize::Zeroizing;
 use crate::format::{Document, EntryId, FORMAT_VERSION};
 use crate::fs_atomic::{write_atomic, write_new};
 use crate::merge::{Choice, Conflict, Merge, merge};
-use crate::sync::{restamp, stamp};
+use crate::sync::{Stamp, device_name, restamp_as, stamp};
 
 /// Мастер-пароль. Стирается из памяти при удалении.
 pub type Passphrase = SecretString;
@@ -116,6 +116,10 @@ pub struct Saved {
 pub struct Merged {
     /// Конфликты, уже решённые при записи.
     pub conflicts: Vec<Conflict>,
+    /// Моя версия файла до слияния: когда записана.
+    pub mine: Option<Stamp>,
+    /// Их версия: когда и каким устройством записана.
+    pub theirs: Option<Stamp>,
     ids: Vec<(EntryId, EntryId)>,
 }
 
@@ -174,7 +178,7 @@ impl Vault {
 
     fn create_with(path: &Path, key: Option<Key>) -> Result<Self, VaultError> {
         let mut document = Document::default();
-        restamp(&mut document, &[]);
+        restamp_as(&mut document, &[], device_for(key.as_ref()).as_deref());
         let bytes = encode(&document, key.as_ref())?;
         write_new(path, &bytes).map_err(|err| match err.kind() {
             io::ErrorKind::AlreadyExists => VaultError::AlreadyExists,
@@ -275,7 +279,7 @@ impl Vault {
             // Новая версия ставится на копию: если запись не удалась, в истории файла
             // не останется версии, которой не было на диске.
             let mut next = self.document.clone();
-            restamp(&mut next, &[]);
+            restamp_as(&mut next, &[], device_for(self.key.as_ref()).as_deref());
             let bytes = encode(&next, self.key.as_ref())?;
             self.write_over(&current, bytes, backup)?;
             self.document = next;
@@ -291,7 +295,7 @@ impl Vault {
         let merged = self.merged_with(&base, &theirs, decide)?;
         let bytes = encode(&merged.document, self.key.as_ref())?;
         self.write_over(&current, bytes, backup)?;
-        Ok(self.take_merge(merged))
+        Ok(self.take_merge(merged, &theirs))
     }
 
     /// Байты файла, которые приложение прочитало или записало последними.
@@ -311,7 +315,7 @@ impl Vault {
         let merged = self.merged_with(base, theirs, decide)?;
         let bytes = encode(&merged.document, self.key.as_ref())?;
         self.replace_file(bytes, backup)?;
-        Ok(self.take_merge(merged))
+        Ok(self.take_merge(merged, theirs))
     }
 
     /// Заменяет файл другой версией байт в байт: например, версией из облака, когда
@@ -336,14 +340,17 @@ impl Vault {
             merged.resolve(index, choice).map_err(|_| VaultError::ChangedOnDisk)?;
         }
         let mine = stamp(&self.document);
-        restamp(&mut merged.document, &mine.iter().collect::<Vec<_>>());
+        restamp_as(&mut merged.document, &mine.iter().collect::<Vec<_>>(), device_for(self.key.as_ref()).as_deref());
         Ok(merged)
     }
 
-    fn take_merge(&mut self, merged: Merge) -> Saved {
+    /// Берёт слитый документ. `theirs` — их версия до слияния: окну конфликта нужно,
+    /// когда и где её записали.
+    fn take_merge(&mut self, merged: Merge, theirs: &Document) -> Saved {
+        let mine = stamp(&self.document);
         let Merge { document, conflicts, ids } = merged;
         self.document = document;
-        Saved { merged: Some(Merged { conflicts, ids }) }
+        Saved { merged: Some(Merged { conflicts, mine, theirs: stamp(theirs), ids }) }
     }
 
     /// Шифрует файл новым паролем и сразу записывает его.
@@ -363,7 +370,7 @@ impl Vault {
         }
         let key = protection.map(|(passphrase, options)| Key { passphrase, options });
         let mut next = self.document.clone();
-        restamp(&mut next, &[]);
+        restamp_as(&mut next, &[], device_for(key.as_ref()).as_deref());
         let bytes = encode(&next, key.as_ref())?;
         self.replace_file(bytes, backup)?;
         self.document = next;
@@ -391,8 +398,8 @@ impl Vault {
     ) -> Result<(), VaultError> {
         // Копия становится новой версией текущей истории, а не своей старой.
         match stamp(&self.document) {
-            Some(current) => restamp(&mut document, &[&current]),
-            None => restamp(&mut document, &[]),
+            Some(current) => restamp_as(&mut document, &[&current], device_for(self.key.as_ref()).as_deref()),
+            None => restamp_as(&mut document, &[], device_for(self.key.as_ref()).as_deref()),
         };
         let bytes = encode(&document, self.key.as_ref())?;
         self.replace_file(bytes, backup)?;
@@ -492,6 +499,12 @@ pub fn decrypt_file(bytes: &[u8], passphrase: Option<&Passphrase>) -> Result<Doc
     }
     let passphrase = passphrase.ok_or(VaultError::PassphraseRequired)?;
     checked(Document::parse(&decrypt(bytes, passphrase)?))
+}
+
+/// Имя устройства для новой версии файла: только у зашифрованного хранилища.
+/// В открытом файле имя компьютера было бы видно любому, кто его откроет.
+fn device_for(key: Option<&Key>) -> Option<String> {
+    key.and_then(|_| device_name())
 }
 
 /// Отказывается открывать файл, записанный более новой версией формата.

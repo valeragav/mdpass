@@ -128,7 +128,13 @@ pub async fn run_import(state: State<'_, AppState>, path: String, fixes: FixesIn
         let imported = analyze(&source, fixes.into()).result;
         let mut session = state.lock();
         let count = edit(&mut session, BackupKind::Import, |doc| merge_into(doc, &imported))?;
-        session.last_import = Some(path);
+        // Копия файла с телефона больше не нужна: в ней пароли открытым текстом.
+        if crate::picked::is_import_copy(&path) {
+            let _ = fs::remove_file(&path);
+            session.last_import = None;
+        } else {
+            session.last_import = Some(path);
+        }
         Ok(count)
     })
     .await

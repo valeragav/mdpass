@@ -11,6 +11,11 @@
   import EntryDetails from "./main/EntryDetails.svelte";
   import SectionView from "./main/SectionView.svelte";
   import Sidebar from "./main/Sidebar.svelte";
+  import { closeDetail, layout } from "../lib/layout.svelte";
+  import IconButton from "../lib/ui/IconButton.svelte";
+  import { showToast } from "../lib/toast.svelte";
+  import { toggleFavorite } from "../lib/vault.svelte";
+  import MobileList from "./mobile/MobileList.svelte";
 
   let query = $state("");
   let tag = $state("");
@@ -38,6 +43,10 @@
 
   // Ctrl+F — поиск, Ctrl+N — новая запись, Ctrl+L — заблокировать.
   function onKey(event: KeyboardEvent) {
+    if (layout.narrow && layout.detail && event.key === "Escape" && !askDelete) {
+      closeDetail();
+      return;
+    }
     if (!(event.ctrlKey || event.metaKey) || event.altKey || askDelete) return;
     const key = event.key.toLowerCase();
     if (key === "f" || key === "а") {
@@ -65,8 +74,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<AppShell {status}>
-  <Sidebar {visible} bind:query bind:tag />
+{#snippet content()}
 
   {#if error}
     <div class="center">
@@ -106,12 +114,44 @@
     <SectionView path={vault.selectedSection} {visible} />
   {:else if selected}
     {#key selected.id}
-      <EntryDetails entry={selected} ondelete={() => (askDelete = true)} />
+      <EntryDetails entry={selected} ondelete={() => (askDelete = true)} compact={layout.narrow} />
     {/key}
   {:else}
     <div class="center"><p class="muted">Выберите запись слева</p></div>
   {/if}
-</AppShell>
+{/snippet}
+
+{#if !layout.narrow}
+  <AppShell {status}>
+    <Sidebar {visible} bind:query bind:tag />
+    {@render content()}
+  </AppShell>
+{:else if vault.entries.length === 0 || error !== null}
+  <AppShell {status}>
+    {@render content()}
+  </AppShell>
+{:else if layout.detail}
+  <!-- Телефон: запись на весь экран, сверху «назад» и кнопки записи. -->
+  <div class="pane">
+    <div class="bar">
+      <IconButton icon="back" label="Назад к записям" onclick={closeDetail} />
+      <span class="spacer"></span>
+      {#if selected && !vault.selectedSection}
+        <IconButton
+          icon="star"
+          label={selected.favorite ? "Убрать из избранного" : "Добавить в избранное"}
+          pressed={selected.favorite}
+          filled={selected.favorite}
+          onclick={() => selected && toggleFavorite(selected).catch((err) => showToast(errorText(err)))}
+        />
+        <IconButton icon="edit" label="Редактировать" onclick={() => go("edit-entry")} />
+      {/if}
+    </div>
+    {@render content()}
+  </div>
+{:else}
+  <MobileList {visible} bind:query bind:tag />
+{/if}
 
 {#if selected}
   <ConfirmDialog
@@ -131,6 +171,32 @@
 {/if}
 
 <style>
+  /* Узкий экран: запись или раздел на весь экран со строкой «назад» сверху. */
+  .pane {
+    height: 100%;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .pane > :global(*:not(.bar)) {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .bar {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 8px;
+  }
+
+  .spacer {
+    flex: 1;
+  }
+
   .center {
     flex: 1;
     min-width: 0;

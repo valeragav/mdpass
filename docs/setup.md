@@ -104,9 +104,54 @@ npm run test:ui
    git push origin v0.1.0
    ```
 
-GitHub Actions (`.github/workflows/release.yml`) соберёт установщики для Windows, macOS
-и Linux и создаст черновик выпуска. Останется проверить файлы и опубликовать его.
+GitHub Actions (`.github/workflows/release.yml`) соберёт установщики для Windows, macOS,
+Linux и APK для Android и создаст черновик выпуска. Останется проверить файлы и
+опубликовать его.
 
-Android и iOS — следующий этап: нужны `npm run tauri android init` и `ios init`, буфер
-обмена через плагин Tauri и иконки для телефонов
-(`npm run tauri icon src-tauri/icons/app-icon.svg`).
+APK подписывается ключом из секретов репозитория: `ANDROID_KEYSTORE` (файл `.jks` в
+base64), `ANDROID_KEYSTORE_PASSWORD` и `ANDROID_KEY_ALIAS`. Ключ один на всё время жизни
+приложения: APK с другим ключом не встанет поверх установленного. Храните файл ключа и
+пароль в надёжном месте, в репозиторий они не попадают.
+
+## Android
+
+Проект Android лежит в `src-tauri/gen/android`. Для сборки нужны Android SDK с NDK и Java 17
+или новее (подойдёт встроенная в Android Studio), а также цели Rust:
+
+```sh
+rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+```
+
+Переменные для сборки (PowerShell):
+
+```powershell
+$sdk = "$env:LOCALAPPDATA\Android\Sdk"
+$env:JAVA_HOME = 'C:\Program Files\Android\Android Studio\jbr'
+$env:ANDROID_HOME = $sdk
+$env:NDK_HOME = "$sdk\ndk\<версия>"
+```
+
+Запуск на эмуляторе или подключённом телефоне с обновлением интерфейса на ходу:
+
+```sh
+npm run tauri android dev
+```
+
+Отладочный APK для эмулятора x86_64 и его установка:
+
+```powershell
+npm run tauri android build -- --debug --apk --target x86_64
+& "$sdk\platform-tools\adb.exe" install -r src-tauri\gen\android\app\build\outputs\apk\universal\debug\app-universal-debug.apk
+```
+
+На телефоне хранилище лежит в личной папке приложения. Файл, выбранный в системном
+диалоге, приложение копирует туда же. Токены облаков — в файле в той же папке.
+
+Иконка для Android — `src-tauri/icons/app-icon-android.svg`: ключ меньше, чтобы круглая
+маска лаунчера его не срезала. Команда `tauri icon` перезаписывает и иконки для компьютеров,
+поэтому иконки собирают во временную папку и переносят только папки `mipmap-*` из
+`<папка>/android` в `src-tauri/gen/android/app/src/main/res`:
+
+```sh
+npm run tauri icon src-tauri/icons/app-icon-android.svg -- -o <папка>
+```

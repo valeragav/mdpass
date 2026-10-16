@@ -14,9 +14,11 @@
   interface Props {
     entry: EntryView;
     ondelete: () => void;
+    /// На телефоне кнопки записи стоят в верхней строке экрана, а не у названия.
+    compact?: boolean;
   }
 
-  let { entry, ondelete }: Props = $props();
+  let { entry, ondelete, compact = false }: Props = $props();
 
   let mode = $state<"card" | "markdown">("card");
 
@@ -53,6 +55,7 @@
     <div class="crumb mono">{entry.path.join(" / ")}</div>
     <div class="title-row">
       <h1>{entry.title}</h1>
+      {#if !compact}
       <div class="actions">
         <IconButton
           icon="star"
@@ -66,6 +69,7 @@
         <Button size="sm" icon="edit" onclick={() => go("edit-entry")}>Редактировать</Button>
         <IconButton icon="trash" label="Удалить запись" bordered size="sm" onclick={ondelete} />
       </div>
+      {/if}
     </div>
     {#if entry.tags.length > 0}
       <div class="tags">
@@ -300,4 +304,25 @@
     color: var(--text-subtle);
   }
 
+
+  /* Узкий экран: название на всю строку, кнопки под ним, поля ближе к краям. */
+  @media (max-width: 640px) {
+    .head {
+      padding: 16px 16px 0;
+    }
+
+    .title-row {
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    h1 {
+      flex: 1 1 100%;
+      font-size: 24px;
+    }
+
+    .content {
+      padding: 16px 16px 32px;
+    }
+  }
 </style>

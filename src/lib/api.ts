@@ -1,6 +1,7 @@
 // Команды Rust-части. Типы повторяют `src-tauri/src/commands.rs`.
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { IS_MOBILE } from "./platform";
 
 export interface VaultFile {
   path: string;
@@ -28,11 +29,38 @@ export interface Settings {
   sidebarWidth: number;
 }
 
-/// Файл изменили на другом устройстве, и изменения слиты при записи.
-export interface MergeNotice {
-  /// Записи, которые изменили с двух сторон: в файле остались обе версии.
-  bothKept: string[];
+/// Строка таблицы «что разошлось» в конфликте.
+export interface ConflictRow {
+  /// Ключ поля или часть записи: `title`, `section`, `tags`, `extra`.
+  key: string;
+  /// Это не поле, а часть записи.
+  part: boolean;
+  secret: boolean;
+  /// Значения. `null` у секретного поля и у поля, которого в версии нет.
+  mine: string | null;
+  theirs: string | null;
+  /// Номер поля в моей копии и в записи после слияния: по нему «показать».
+  /// `null` — такого поля в этой версии нет.
+  mineField: number | null;
+  theirsField: number | null;
 }
+
+/// Конфликт слияния, который ждёт выбора. В файле пока лежат обе версии.
+export interface ConflictView {
+  /// `edited` — запись изменили с двух сторон; `deletedHere` — я удалил, там изменили;
+  /// `deletedThere` — там удалили, я изменил.
+  kind: "edited" | "deletedHere" | "deletedThere";
+  path: string[];
+  title: string;
+  entryId: number;
+  copyId: number | null;
+  rows: ConflictRow[];
+  theirDevice: string | null;
+  theirAtMs: number | null;
+  myAtMs: number | null;
+}
+
+export type ConflictChoice = "mine" | "theirs" | "both";
 
 export interface Status {
   unlocked: boolean;
@@ -231,6 +259,9 @@ const VAULT_FILTERS = [{ name: "Хранилище mdpass", extensions: ["age", 
 export const api = {
   status: () => invoke<Status>("status"),
   describePath: (path: string) => invoke<VaultFile>("describe_path", { path }),
+  /// Файл из диалога. На телефоне диалог отдаёт адрес content://, и Rust копирует файл
+  /// в папку приложения: хранилище — насовсем, файл для импорта — до конца импорта.
+  adoptFile: (path: string, purpose: "vault" | "import") => invoke<VaultFile>("adopt_file", { path, purpose }),
   createVault: (path: string, passphrase: string | null, protection: Protection) =>
     invoke<Protection>("create_vault", { path, passphrase, protection }),
   /// `passphrase: null` — открыть хранилище без шифрования.
@@ -264,7 +295,8 @@ export const api = {
   /// Забыть копию, открытую на экране копий: её расшифрованный текст больше не нужен.
   closeBackup: () => invoke<void>("close_backup"),
   entries: () => invoke<EntryView[]>("entries"),
-  takeMergeNotice: () => invoke<MergeNotice | null>("take_merge_notice"),
+  conflicts: () => invoke<ConflictView[]>("conflicts"),
+  resolveConflict: (index: number, choice: ConflictChoice) => call<void>("resolve_conflict", { index, choice }),
   cloudStatus: () => invoke<CloudView>("cloud_status"),
   cloudConnect: (provider: CloudProvider, clientId: string, token: string) =>
     call<void>("cloud_connect", { provider, clientId, token }),
@@ -302,7 +334,7 @@ export const api = {
       filters: [{ name: "Markdown", extensions: ["md", "markdown", "txt"] }],
       title: "Файл с паролями для импорта",
     });
-    return typeof path === "string" ? api.describePath(path) : null;
+    return typeof path === "string" ? api.adoptFile(path, "import") : null;
   },
 
   /// Диалог выбора места для нового хранилища.
@@ -313,7 +345,9 @@ export const api = {
 
   /// Диалог выбора существующего хранилища.
   async pickExistingVault(): Promise<VaultFile | null> {
-    const path = await open({ multiple: false, directory: false, filters: VAULT_FILTERS, title: "Открыть хранилище" });
-    return typeof path === "string" ? api.describePath(path) : null;
+    // Android не знает тип .age и не даёт выбрать такой файл с фильтром: на телефоне без фильтра.
+    const filters = IS_MOBILE ? undefined : VAULT_FILTERS;
+    const path = await open({ multiple: false, directory: false, filters, title: "Открыть хранилище" });
+    return typeof path === "string" ? api.adoptFile(path, "vault") : null;
   },
 };

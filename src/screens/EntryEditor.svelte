@@ -902,4 +902,67 @@
     background: var(--bg-hover-strong);
   }
 
+
+  /* Узкий экран: одна колонка; в строке поля ключ сверху, значение под ним во всю
+     ширину; кнопки сохранения — внизу во всю ширину, пояснение над ними не нужно. */
+  @media (max-width: 640px) {
+    .file {
+      display: none;
+    }
+
+    .content {
+      padding: 20px 16px 24px;
+    }
+
+    .two {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .field {
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      grid-template-areas:
+        "grip key actions"
+        "grip value value";
+      row-gap: 8px;
+    }
+
+    .field > .grip {
+      grid-area: grip;
+    }
+
+    .field > .key {
+      grid-area: key;
+    }
+
+    .field > .input:not(.key) {
+      grid-area: value;
+    }
+
+    .field > .field-actions {
+      grid-area: actions;
+    }
+
+    .bar {
+      flex-direction: column;
+      align-items: stretch;
+      padding: 12px 16px;
+    }
+
+    .bar > .note {
+      display: none;
+    }
+
+    .bar-actions {
+      flex-wrap: wrap;
+    }
+
+    .bar-actions > :global(.btn) {
+      flex: 1 1 auto;
+    }
+
+    .spread {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+  }
 </style>

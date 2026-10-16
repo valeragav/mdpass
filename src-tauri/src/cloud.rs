@@ -25,8 +25,9 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::commands::{CommandError, VaultFile, describe, millis, run_blocking};
-use crate::session::{AppState, MergeNotice, Session};
+use crate::session::{AppState, Session};
 
+#[cfg(desktop)]
 const KEYRING_SERVICE: &str = "io.github.valeragav.mdpass";
 /// Состояние синхронизации изменилось.
 const STATUS_EVENT: &str = "cloud-status";
@@ -38,6 +39,16 @@ const PERIOD: Duration = Duration::from_secs(60);
 const SETTLE: Duration = Duration::from_millis(800);
 
 static WAKE: OnceLock<Sender<()>> = OnceLock::new();
+
+/// Имя этого компьютера: им подписываются версии файла, чтобы окно конфликта
+/// показало, где изменили запись. Без имени окно пишет «другое устройство».
+pub fn host_name() -> Option<String> {
+    let from_env = ["COMPUTERNAME", "HOSTNAME"].iter().find_map(|key| std::env::var(key).ok());
+    from_env
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
 
 /// Синхронизировать как можно скорее: после разблокировки или правки.
 pub fn wake() {
@@ -100,12 +111,15 @@ impl From<SyncError> for CommandError {
     }
 }
 
-// Токен в системном хранилище паролей: свой на каждое облако.
+// Токен облака: свой на каждое облако. На компьютере — в системном хранилище
+// паролей, на телефоне — файлом в личной папке приложения (см. `token_file`).
 
+#[cfg(desktop)]
 fn keyring_entry(provider: Provider) -> Result<keyring::Entry, CommandError> {
     keyring::Entry::new(KEYRING_SERVICE, provider.as_str()).map_err(keyring_error)
 }
 
+#[cfg(desktop)]
 fn keyring_error(err: keyring::Error) -> CommandError {
     log::warn!("системное хранилище паролей: {err}");
     CommandError::Cloud {
@@ -113,19 +127,75 @@ fn keyring_error(err: keyring::Error) -> CommandError {
     }
 }
 
+#[cfg(desktop)]
 fn load_token(provider: Provider) -> Option<String> {
     keyring_entry(provider).ok()?.get_password().ok()
 }
 
+#[cfg(desktop)]
 fn save_token(provider: Provider, token: &str) -> Result<(), CommandError> {
     keyring_entry(provider)?.set_password(token).map_err(keyring_error)
 }
 
+#[cfg(desktop)]
 fn delete_token(provider: Provider) {
     if let Ok(entry) = keyring_entry(provider) {
         match entry.delete_credential() {
             Ok(()) | Err(keyring::Error::NoEntry) => {}
             Err(err) => log::warn!("не удалось удалить токен облака: {err}"),
+        }
+    }
+}
+
+#[cfg(mobile)]
+use token_file::{delete_token, load_token, save_token};
+
+/// Токен на телефоне. Системного хранилища паролей для приложений на Rust там нет,
+/// поэтому токен лежит файлом в личной папке приложения: Android не пускает туда
+/// другие приложения. На телефоне с root-доступом файл прочитать можно — но токен
+/// открывает только папку приложения в облаке, где лежит зашифрованный файл.
+#[cfg(mobile)]
+pub mod token_file {
+    use std::path::PathBuf;
+    use std::sync::OnceLock;
+
+    use mdpass_core::config::Provider;
+
+    use crate::commands::CommandError;
+
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+
+    /// Папка для токенов: задаёт приложение при запуске.
+    pub fn init(dir: PathBuf) {
+        let _ = DIR.set(dir);
+    }
+
+    fn path(provider: Provider) -> Option<PathBuf> {
+        Some(DIR.get()?.join(provider.as_str()))
+    }
+
+    pub fn load_token(provider: Provider) -> Option<String> {
+        let token = std::fs::read_to_string(path(provider)?).ok()?;
+        let token = token.trim().to_string();
+        (!token.is_empty()).then_some(token)
+    }
+
+    pub fn save_token(provider: Provider, token: &str) -> Result<(), CommandError> {
+        let path = path(provider)
+            .ok_or(CommandError::Cloud { message: "Папка приложения недоступна".into() })?;
+        let saved = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(&path, token));
+        saved.map_err(|err| {
+            log::warn!("не удалось сохранить токен облака: {err}");
+            CommandError::Cloud { message: format!("Не удалось сохранить токен: {err}") }
+        })
+    }
+
+    pub fn delete_token(provider: Provider) {
+        if let Some(path) = path(provider)
+            && let Err(err) = std::fs::remove_file(path)
+            && err.kind() != std::io::ErrorKind::NotFound
+        {
+            log::warn!("не удалось удалить токен облака: {err}");
         }
     }
 }
@@ -264,11 +334,7 @@ fn run_once<R: Runtime>(app: &AppHandle<R>) {
     let changed = {
         let mut session = state.lock();
         if let Ok(Synced::Merged(merged)) = &result {
-            let both_kept: Vec<String> =
-                merged.conflicts.iter().filter_map(|c| c.mine.as_ref().map(|e| e.title.clone())).collect();
-            if !both_kept.is_empty() {
-                session.merge_notice = Some(MergeNotice { both_kept });
-            }
+            crate::conflicts::remember(&mut session, merged);
         }
         let changed = session.vault.as_ref().is_some_and(|v| v.path() == path && v.bytes() != before.as_slice());
         if changed {

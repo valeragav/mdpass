@@ -10,6 +10,7 @@
   import ProtectionPicker, { type Protection } from "../lib/ui/ProtectionPicker.svelte";
   import RecentVaults from "../lib/ui/RecentVaults.svelte";
   import CloudOpen from "../lib/ui/CloudOpen.svelte";
+  import { IS_MOBILE } from "../lib/platform";
 
   let fromCloud = $state(false);
 
@@ -115,7 +116,12 @@
 
     <div class="field">
       <span class="label">Файл хранилища</span>
-      <FileChip label={file?.display ?? "Выберите, где сохранить файл"} onpick={pickFile} pickLabel="Выбрать место" />
+      <!-- На телефоне хранилище всегда в папке приложения: место не выбирается. -->
+      <FileChip
+        label={(IS_MOBILE ? file?.name : file?.display) ?? "Выберите, где сохранить файл"}
+        onpick={IS_MOBILE ? undefined : pickFile}
+        pickLabel="Выбрать место"
+      />
       {#if error}
         <p class="error" role="alert">
           <Icon name="error" />

@@ -1,8 +1,10 @@
 <script lang="ts">
-  // Хранилище из облака на новом компьютере: подключить облако (если ещё не),
+  // Хранилище из облака на новом устройстве: подключить облако (если ещё не),
   // выбрать файл в облаке, выбрать, куда его положить, и открыть мастер-паролем.
-  import { api, errorText } from "../api";
+  // На телефоне место не выбирается: файл ложится в папку приложения.
+  import { api, errorText, type VaultFile } from "../api";
   import { app, go } from "../nav.svelte";
+  import { IS_MOBILE } from "../platform";
   import Button from "./Button.svelte";
   import CloudConnect from "./CloudConnect.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
@@ -46,11 +48,24 @@
     }
   }
 
+  /// Свободное имя в папке приложения: `vault.md.age`, `vault (2).md.age`…
+  async function freeTarget(name: string): Promise<VaultFile | null> {
+    const base = app.defaultVault?.path;
+    if (!base) return null;
+    const dir = base.slice(0, Math.max(base.lastIndexOf("/"), base.lastIndexOf("\\")) + 1);
+    const dot = name.indexOf(".");
+    const [stem, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ""];
+    for (let n = 1; ; n++) {
+      const file = await api.describePath(`${dir}${n === 1 ? name : `${stem} (${n})${ext}`}`);
+      if (!file.exists) return file;
+    }
+  }
+
   async function choose(name: string) {
     busy = true;
     error = null;
     try {
-      const target = await api.pickNewVault(name);
+      const target = IS_MOBILE ? await freeTarget(name) : await api.pickNewVault(name);
       if (!target) return;
       app.vault = await api.cloudDownload(name, target.path);
       onclose();
@@ -82,9 +97,9 @@
   {#if names === null && !error}
     <p>Смотрим, что лежит в служебной папке приложения…</p>
   {:else if names && names.length === 0}
-    <p>В служебной папке приложения хранилищ нет. Включите синхронизацию на компьютере, где хранилище уже есть.</p>
+    <p>В служебной папке приложения хранилищ нет. Включите синхронизацию на устройстве, где хранилище уже есть.</p>
   {:else if names}
-    <p>Выберите хранилище. Его копия ляжет на этот компьютер и будет синхронизироваться с облаком.</p>
+    <p>Выберите хранилище. Его копия ляжет на это устройство и будет синхронизироваться с облаком.</p>
     <ul class="names">
       {#each names as name (name)}
         <li><Button full disabled={busy} onclick={() => choose(name)}>{name}</Button></li>

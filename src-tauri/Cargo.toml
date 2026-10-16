@@ -30,13 +30,19 @@ age = "0.12.1"
 tauri-plugin-log = "2"
 log = "0.4"
 mdpass-cloud = { path = "../crates/mdpass-cloud" }
-# Токены облаков — в системном хранилище паролей: Диспетчер учётных данных Windows,
-# Связка ключей macOS, Secret Service в Linux.
-keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
 
-# Буфер обмена на компьютерах. На телефонах появится вместе с мобильной сборкой.
+# Буфер обмена на компьютерах. На телефонах — плагин Tauri, ниже.
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 arboard = { version = "3.6", default-features = false }
+# Токены облаков на компьютерах — в системном хранилище паролей: Диспетчер учётных
+# данных Windows, Связка ключей macOS, Secret Service в Linux. На телефоне — файл.
+keyring = { version = "3.6", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+
+# Буфер обмена на телефонах. Плагин fs читает и пишет файлы, выбранные в системном
+# диалоге: Android отдаёт вместо пути адрес content://.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-fs = "2"
 
 [dev-dependencies]
 tempfile = "3.27.0"

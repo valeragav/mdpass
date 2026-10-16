@@ -1,10 +1,15 @@
 mod backups;
 #[cfg(desktop)]
 mod clipboard;
+#[cfg(mobile)]
+#[path = "clipboard_mobile.rs"]
+mod clipboard;
 mod cloud;
 mod commands;
+mod conflicts;
 mod entries;
 mod importing;
+mod picked;
 mod session;
 mod settings;
 
@@ -76,7 +81,11 @@ fn watch_idle(app: AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // На телефоне буфер обмена — через плагин; на компьютере — arboard (clipboard.rs).
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_clipboard_manager::init()).plugin(tauri_plugin_fs::init());
+    builder
         // Журнал ошибок в папке журналов приложения: до трёх файлов по мегабайту.
         // Значения записей и пароли сюда не пишутся, только пути и системные ошибки.
         .plugin(
@@ -95,6 +104,12 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             log_panics();
+            #[cfg(mobile)]
+            clipboard::init(app.handle().clone());
+            #[cfg(mobile)]
+            cloud::token_file::init(app.path().app_local_data_dir()?.join("cloud-tokens"));
+            #[cfg(mobile)]
+            picked::mobile::init(app.path().app_cache_dir()?.join("import"));
             log::info!("mdpass {} запущен", app.package_info().version);
             move_old_app_data(app.handle());
             let config_path = app.path().app_config_dir()?.join("config.json");
@@ -103,6 +118,7 @@ pub fn run() {
             let backups_root = app.path().app_local_data_dir()?.join("backups");
             app.manage(AppState::new(Session::new(config_path, backups_root)));
             watch_idle(app.handle().clone());
+            mdpass_core::sync::set_device_name(cloud::host_name());
             cloud::start(app.handle().clone());
             Ok(())
         })
@@ -127,12 +143,14 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::status,
             commands::describe_path,
+            picked::adopt_file,
             commands::create_vault,
             commands::unlock,
             commands::lock,
             commands::touch,
             commands::reload_vault,
-            entries::take_merge_notice,
+            conflicts::conflicts,
+            conflicts::resolve_conflict,
             cloud::cloud_status,
             cloud::cloud_connect,
             cloud::cloud_logout,
@@ -175,7 +193,6 @@ pub fn run() {
         .run(|_app, event| {
             // Секрет не должен остаться в буфере после выхода из приложения.
             if let RunEvent::Exit = event {
-                #[cfg(desktop)]
                 clipboard::clear_ours();
             }
         });
