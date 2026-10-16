@@ -7,6 +7,7 @@
   import { loadEntries, pending } from "../vault.svelte";
   import Button from "./Button.svelte";
   import ConfirmDialog from "./ConfirmDialog.svelte";
+  import { IS_MOBILE } from "../platform";
 
   const PART: Record<string, string> = { title: "Название", section: "Раздел", tags: "Теги", extra: "Строки без ключа" };
 
@@ -23,6 +24,8 @@
   });
 
   let other = $derived(conflict?.theirDevice ?? "Другое устройство");
+  /// Как назвать это устройство: телефон или компьютер.
+  const here = IS_MOBILE ? "Этот телефон" : "Этот компьютер";
   let hasSecrets = $derived(conflict?.rows.some((r) => r.secret) ?? false);
   let shown = $derived(Object.keys(revealed).length > 0);
 
@@ -107,7 +110,7 @@
         <thead>
           <tr>
             <th scope="col">Поле</th>
-            <th scope="col" class="mine">Этот компьютер</th>
+            <th scope="col" class="mine">{here}</th>
             <th scope="col" class="theirs">{other}</th>
           </tr>
         </thead>
@@ -115,15 +118,15 @@
           {#each conflict.rows as row (row.key)}
             <tr>
               <th scope="row" class:mono={!row.part}>{row.part ? PART[row.key] : row.key}</th>
-              <td class:mono={!row.part} class:masked={row.secret && !shown}>{cell(row, "mine")}</td>
-              <td class:mono={!row.part} class:masked={row.secret && !shown}>{cell(row, "theirs")}</td>
+              <td class:mono={!row.part} class:masked={row.secret && !shown} data-label={here}>{cell(row, "mine")}</td>
+              <td class:mono={!row.part} class:masked={row.secret && !shown} data-label={other}>{cell(row, "theirs")}</td>
             </tr>
           {/each}
           {#if conflict.myAtMs !== null || conflict.theirAtMs !== null}
             <tr class="when">
               <th scope="row">Изменено</th>
-              <td>{time(conflict.myAtMs)}</td>
-              <td>{time(conflict.theirAtMs)}</td>
+              <td data-label={here}>{time(conflict.myAtMs)}</td>
+              <td data-label={other}>{time(conflict.theirAtMs)}</td>
             </tr>
           {/if}
         </tbody>
@@ -235,5 +238,41 @@
     background: var(--bg-chrome);
     font-size: 12px;
     color: var(--text-muted);
+  }
+
+  /* Узкий экран: вместо колонок — карточка на каждое поле, подписи у значений. */
+  @media (max-width: 640px) {
+    table,
+    tbody,
+    tr,
+    th,
+    td {
+      display: block;
+    }
+
+    thead {
+      display: none;
+    }
+
+    tbody th {
+      padding-bottom: 4px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    td {
+      border-top: 0;
+      padding-top: 4px;
+    }
+
+    td::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 2px;
+      font-family: var(--font-sans);
+      font-size: 11px;
+      letter-spacing: 0;
+      color: var(--text-subtle);
+    }
   }
 </style>

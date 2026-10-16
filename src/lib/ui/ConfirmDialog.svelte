@@ -119,4 +119,17 @@
     align-items: center;
     gap: 10px;
   }
+
+  /* Узкий экран: окно почти во всю ширину, кнопки друг под другом, главная — сверху. */
+  @media (max-width: 640px) {
+    .box {
+      padding: 20px;
+      gap: 16px;
+    }
+
+    .actions {
+      flex-direction: column-reverse;
+      align-items: stretch;
+    }
+  }
 </style>

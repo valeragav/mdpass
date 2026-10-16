@@ -4,6 +4,7 @@
 </script>
 
 <script lang="ts">
+  import { layout, openDetail } from "../../lib/layout.svelte";
   import { onDestroy } from "svelte";
   import { api, errorText, type EntryView } from "../../lib/api";
   import { app, go } from "../../lib/nav.svelte";
@@ -581,7 +582,14 @@
 
 <svelte:window onkeydown={onKey} />
 
-<aside class:dragging={dragging !== null} class:resizing style:width="{width}px" bind:this={aside}>
+<aside
+  class:dragging={dragging !== null}
+  class:resizing
+  class:narrow={layout.narrow}
+  style:width={layout.narrow ? "100%" : `${width}px`}
+  bind:this={aside}
+>
+  {#if !layout.narrow}
   <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
   <div
     class="resizer"
@@ -597,6 +605,7 @@
     ondblclick={resetWidth}
     onkeydown={onResizeKey}
   ></div>
+  {/if}
   <div class="top">
     <div class="search">
       <Icon name="search" color="var(--text-subtle)" />
@@ -674,6 +683,7 @@
               if (suppressClick) return;
               vault.selectedId = entry.id;
               vault.selectedSection = null;
+              openDetail();
               cursorIn = "fav";
               keyNav.zone = "list";
             }}
@@ -737,7 +747,8 @@
               const onChevron = (e.target as HTMLElement).closest(".chevron") !== null;
               if (onChevron || isCurrent(row)) toggle(row);
               else if (!open) toggle(row);
-              vault.selectedSection = row.path;
+              // На узком экране раздел только сворачивается: записи видны в самом списке.
+              if (!layout.narrow) vault.selectedSection = row.path;
             }}
           >
             <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
@@ -758,6 +769,7 @@
               if (suppressClick) return;
               vault.selectedId = row.entry.id;
               vault.selectedSection = null;
+              openDetail();
               cursorIn = "list";
               keyNav.zone = "list";
             }}
@@ -785,6 +797,11 @@
 {/if}
 
 <style>
+  aside.narrow {
+    flex: 1;
+    border-right: 0;
+  }
+
   aside {
     position: relative;
     flex: none;
@@ -1155,5 +1172,13 @@
   .bottom {
     padding: 12px 16px 16px;
     border-top: 1px solid var(--line);
+  }
+
+  /* Телефон: строки под палец — не ниже 44 пикселей, текст чуть крупнее. */
+  aside.narrow .fav-head,
+  aside.narrow .group,
+  aside.narrow .entry {
+    height: 44px;
+    font-size: 15px;
   }
 </style>

@@ -28,7 +28,7 @@ export function statusText(status: SyncStatus): string {
       return `Синхронизировано в ${time}`;
     }
     case "offline":
-      return "Нет связи с облаком. Изменения сохранены на компьютере и уйдут, когда связь появится";
+      return "Нет связи с облаком. Изменения сохранены на устройстве и уйдут, когда связь появится";
     case "needsLogin":
       return "Вход в облако истёк: выйдите и подключите его заново";
     case "failed":

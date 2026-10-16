@@ -72,4 +72,22 @@
     display: flex;
     gap: 4px;
   }
+
+  /* Узкий экран: ключ над значением, кнопки справа от значения. */
+  @media (max-width: 640px) {
+    .field {
+      grid-template-columns: minmax(0, 1fr) auto;
+      row-gap: 0;
+      padding: 10px 4px 6px 14px;
+    }
+
+    .key {
+      grid-column: 1 / -1;
+      font-size: calc(12px * var(--entry-scale));
+    }
+
+    .value {
+      padding: 2px 0 4px;
+    }
+  }
 </style>

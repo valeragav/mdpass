@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
+  import { layout } from "../layout.svelte";
   import { app, go } from "../nav.svelte";
   import { lockVault } from "../vault.svelte";
   import Button from "./Button.svelte";
@@ -26,7 +27,11 @@
       <span>{app.protection === "none" ? "без шифрования" : app.protection === "weak" ? "слабое шифрование" : "зашифровано"}</span>
     </div>
     <div class="actions">
-      <Button size="sm" icon="lock" onclick={lockVault}>Заблокировать</Button>
+      {#if layout.narrow}
+        <IconButton icon="lock" label="Заблокировать" bordered size="sm" onclick={lockVault} />
+      {:else}
+        <Button size="sm" icon="lock" onclick={lockVault}>Заблокировать</Button>
+      {/if}
       <IconButton icon="settings" label="Настройки" bordered size="sm" onclick={() => go("settings")} />
     </div>
   </header>
@@ -35,6 +40,7 @@
     {@render children()}
   </div>
 
+  {#if !layout.narrow}
   <footer class="mono">
     <div class="left">
       <Icon name="lock-memory" size={14} />
@@ -46,6 +52,7 @@
       {app.settings.autoLockMinutes > 0 ? `автоблокировка через ${app.settings.autoLockMinutes} мин` : "автоблокировка выключена"}
     </span>
   </footer>
+  {/if}
 </div>
 
 <style>

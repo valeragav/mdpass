@@ -833,3 +833,49 @@ test("Google Drive выбирается переключателем и подк
   await page.getByRole("button", { name: "Подключить", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Google Drive подключён");
 });
+
+test("на узком экране запись открывается отдельно и возвращается к списку", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Общий unlock ждёт карточку записи, а на узком экране сначала список.
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+  // Шапка списка: логотип, замок и шестерёнка; счётчика записей и нижней строки нет.
+  await expect(page.getByText("mdpass", { exact: true })).toBeVisible();
+  await expect(page.getByText(/\d+ запис/)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Заблокировать" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Настройки" })).toBeVisible();
+  await expect(page.getByRole("contentinfo")).toHaveCount(0);
+
+  await sidebar(page).getByRole("button", { name: /почта/ }).click();
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Назад к записям" }).click();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "почта" })).toHaveCount(0);
+
+  // Настройки на телефоне — списком разделов, «Назад» из раздела ведёт к списку.
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByRole("button", { name: "Горячие клавиши" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Безопасность" }).click();
+  await expect(page.getByRole("heading", { name: "Безопасность" })).toBeVisible();
+  await page.getByRole("button", { name: "Назад" }).click();
+  await expect(page.getByRole("button", { name: "Облако" })).toBeVisible();
+  await page.getByRole("button", { name: "Назад" }).click();
+
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
+});
+
+test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 480 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await expect(page.getByText("mdpass", { exact: true })).toBeVisible();
+  // Страница не прокручивается целиком: кнопка остаётся внизу окна.
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(480);
+});
