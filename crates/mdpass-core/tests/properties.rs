@@ -182,3 +182,78 @@ proptest! {
         prop_assert!(merge_into(&mut vault, &result).is_ok());
     }
 }
+
+/// Записи без учёта порядка и раздела. Раздел запись сохраняет не всегда: если
+/// заголовки в файле пропускают уровни или раздел без названия, слияние кладёт
+/// запись в ближайший раздел, куда её можно записать. Переносы проверяет tests/merge.rs.
+fn sorted(doc: &Document) -> Seen {
+    let mut out = seen(&doc.entries());
+    for entry in &mut out {
+        entry.0.clear();
+    }
+    out.sort();
+    out
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 500, ..ProptestConfig::default() })]
+
+    /// Я ничего не менял: результат слияния — их файл байт в байт.
+    #[test]
+    fn merge_without_my_changes_is_their_file(start in file(), ops in prop::collection::vec(op(), 0..15)) {
+        use mdpass_core::merge::merge;
+        let base = Document::parse(&start);
+        let mut theirs = base.clone();
+        for op in ops {
+            apply(&mut theirs, op);
+        }
+        let result = merge(&base, &base, &theirs).unwrap();
+        prop_assert!(result.conflicts.is_empty());
+        prop_assert_eq!(result.document.to_markdown(), theirs.to_markdown());
+    }
+
+    /// Там ничего не меняли: в результате те же записи, что у меня.
+    #[test]
+    fn merge_without_their_changes_has_my_entries(start in file(), ops in prop::collection::vec(op(), 0..15)) {
+        use mdpass_core::merge::merge;
+        let base = Document::parse(&start);
+        let mut mine = base.clone();
+        for op in ops {
+            apply(&mut mine, op);
+        }
+        let result = merge(&base, &mine, &base).unwrap();
+        prop_assert!(result.conflicts.is_empty());
+        prop_assert_eq!(sorted(&result.document), sorted(&mine), "{}", result.document.to_markdown());
+    }
+
+    /// Правки с двух сторон: слияние не падает, любой выбор в конфликтах оставляет
+    /// файл целым.
+    #[test]
+    fn merge_of_any_edits_is_consistent(
+        start in file(),
+        my_ops in prop::collection::vec(op(), 0..10),
+        their_ops in prop::collection::vec(op(), 0..10),
+        choice in 0..3usize,
+    ) {
+        use mdpass_core::merge::{Choice, merge, resolve};
+        let base = Document::parse(&start);
+        let (mut mine, mut theirs) = (base.clone(), base.clone());
+        for op in my_ops {
+            apply(&mut mine, op);
+        }
+        for op in their_ops {
+            apply(&mut theirs, op);
+        }
+        let mut result = merge(&base, &mine, &theirs).unwrap();
+        for conflict in &result.conflicts {
+            let choice = match choice {
+                0 => Choice::Mine,
+                1 => Choice::Theirs,
+                _ => Choice::Both { title: "копия".into() },
+            };
+            resolve(&mut result.document, conflict, choice).unwrap();
+        }
+        let reread = Document::parse(&result.document.to_markdown());
+        prop_assert_eq!(seen(&reread.entries()), seen(&result.document.entries()));
+    }
+}

@@ -3,8 +3,9 @@
 //!
 //! Зашифрованный файл — обычный age, его можно расшифровать утилитой `age -d`.
 //! Запись атомарная: новый файл пишется рядом во временный и заменяет старый одним
-//! переименованием. Перед записью приложение сверяет файл с тем, что записало само
-//! в последний раз, чтобы не затереть изменения, сделанные вне приложения.
+//! переименованием. Перед записью приложение сверяет файл с тем, что прочитало или
+//! записало само в последний раз. Если файл изменили вне приложения (синхронизация,
+//! другая копия mdpass), их изменения сливаются с моими, а не затираются.
 
 use std::fmt;
 use std::fs;
@@ -17,8 +18,10 @@ use age::secrecy::{ExposeSecret, SecretString};
 use age::{DecryptError, Decryptor, Encryptor};
 use zeroize::Zeroizing;
 
-use crate::format::{Document, FORMAT_VERSION};
+use crate::format::{Document, EntryId, FORMAT_VERSION};
 use crate::fs_atomic::{write_atomic, write_new};
+use crate::merge::{Choice, Conflict, Merge, merge};
+use crate::sync::{restamp, stamp};
 
 /// Мастер-пароль. Стирается из памяти при удалении.
 pub type Passphrase = SecretString;
@@ -101,6 +104,35 @@ struct Key {
     options: VaultOptions,
 }
 
+/// Как прошла запись.
+#[derive(Debug, Default)]
+pub struct Saved {
+    /// Файл изменили вне приложения, и его изменения слиты с моими.
+    /// `None` — обычная запись поверх своего же файла.
+    pub merged: Option<Merged>,
+}
+
+#[derive(Debug)]
+pub struct Merged {
+    /// Конфликты, уже решённые при записи.
+    pub conflicts: Vec<Conflict>,
+    ids: Vec<(EntryId, EntryId)>,
+}
+
+impl Merged {
+    /// Номер записи после слияния: номера в документе теперь из их версии файла.
+    /// `None` — записи больше нет.
+    pub fn id(&self, before: EntryId) -> Option<EntryId> {
+        self.ids.iter().find(|(from, _)| *from == before).map(|&(_, to)| to)
+    }
+}
+
+/// Название моей версии записи, когда при конфликте остаются обе.
+pub fn copy_title(conflict: &Conflict) -> String {
+    let title = conflict.mine.as_ref().map_or("", |entry| entry.title.as_str());
+    format!("{title} (копия с этого устройства)")
+}
+
 pub struct Vault {
     path: PathBuf,
     key: Option<Key>,
@@ -142,7 +174,7 @@ impl Vault {
 
     fn create_with(path: &Path, key: Option<Key>) -> Result<Self, VaultError> {
         let mut document = Document::default();
-        document.ensure_header();
+        restamp(&mut document, &[]);
         let bytes = encode(&document, key.as_ref())?;
         write_new(path, &bytes).map_err(|err| match err.kind() {
             io::ErrorKind::AlreadyExists => VaultError::AlreadyExists,
@@ -216,17 +248,102 @@ impl Vault {
         self.key.as_ref().is_some_and(|key| key.passphrase.expose_secret() == candidate.expose_secret())
     }
 
-    /// Записывает файл с текущей защитой.
-    pub fn save(&mut self) -> Result<(), VaultError> {
+    /// Записывает файл с текущей защитой. Конфликты слияния решаются «оставить обе».
+    pub fn save(&mut self) -> Result<Saved, VaultError> {
         self.save_with_backup(|_| Ok(()))
     }
 
     /// Как [`save`](Self::save), но сначала передаёт `backup` байты файла, который
     /// сейчас лежит на диске. Если копия не удалась, файл не перезаписывается.
-    pub fn save_with_backup(&mut self, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<(), VaultError> {
-        self.document.ensure_header();
-        let bytes = encode(&self.document, self.key.as_ref())?;
-        self.replace_file(bytes, backup)
+    pub fn save_with_backup(&mut self, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<Saved, VaultError> {
+        self.save_resolving(backup, |conflict| Choice::Both { title: copy_title(conflict) })
+    }
+
+    /// Записывает файл. Если файл на диске изменили вне приложения (синхронизация,
+    /// другая копия mdpass), сначала сливает их изменения с моими: база — то, что
+    /// приложение прочитало или записало последним. Конфликты решает `decide`.
+    ///
+    /// Если их файл не прочитать тем же паролем (его перешифровали) или он повреждён,
+    /// возвращает [`VaultError::ChangedOnDisk`]: тогда его нужно перечитать.
+    pub fn save_resolving(
+        &mut self,
+        backup: impl FnOnce(&[u8]) -> io::Result<()>,
+        decide: impl FnMut(&Conflict) -> Choice,
+    ) -> Result<Saved, VaultError> {
+        let current = self.read_current()?;
+        if current == self.on_disk {
+            // Новая версия ставится на копию: если запись не удалась, в истории файла
+            // не останется версии, которой не было на диске.
+            let mut next = self.document.clone();
+            restamp(&mut next, &[]);
+            let bytes = encode(&next, self.key.as_ref())?;
+            self.write_over(&current, bytes, backup)?;
+            self.document = next;
+            return Ok(Saved::default());
+        }
+
+        let passphrase = self.key.as_ref().map(|key| &key.passphrase);
+        let base = decrypt_file(&self.on_disk, passphrase)?;
+        let theirs = decrypt_file(&current, passphrase).map_err(|err| match err {
+            VaultError::Io(_) | VaultError::NewerFormat(_) => err,
+            _ => VaultError::ChangedOnDisk,
+        })?;
+        let merged = self.merged_with(&base, &theirs, decide)?;
+        let bytes = encode(&merged.document, self.key.as_ref())?;
+        self.write_over(&current, bytes, backup)?;
+        Ok(self.take_merge(merged))
+    }
+
+    /// Байты файла, которые приложение прочитало или записало последними.
+    pub fn bytes(&self) -> &[u8] {
+        &self.on_disk
+    }
+
+    /// Сливает другую версию хранилища с моей и записывает результат: например,
+    /// версию из облака. `base` — их общая версия, от которой они разошлись.
+    pub fn merge_in(
+        &mut self,
+        base: &Document,
+        theirs: &Document,
+        backup: impl FnOnce(&[u8]) -> io::Result<()>,
+        decide: impl FnMut(&Conflict) -> Choice,
+    ) -> Result<Saved, VaultError> {
+        let merged = self.merged_with(base, theirs, decide)?;
+        let bytes = encode(&merged.document, self.key.as_ref())?;
+        self.replace_file(bytes, backup)?;
+        Ok(self.take_merge(merged))
+    }
+
+    /// Заменяет файл другой версией байт в байт: например, версией из облака, когда
+    /// своих правок нет. Версия должна открываться текущим паролем.
+    pub fn adopt(&mut self, bytes: Vec<u8>, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<(), VaultError> {
+        let document = self.decrypt_backup(&bytes)?;
+        self.replace_file(bytes, backup)?;
+        self.document = document;
+        Ok(())
+    }
+
+    /// Слитый документ с новой версией файла. Сам файл не пишется.
+    fn merged_with(
+        &self,
+        base: &Document,
+        theirs: &Document,
+        mut decide: impl FnMut(&Conflict) -> Choice,
+    ) -> Result<Merge, VaultError> {
+        let mut merged = merge(base, &self.document, theirs).map_err(|_| VaultError::ChangedOnDisk)?;
+        for index in 0..merged.conflicts.len() {
+            let choice = decide(&merged.conflicts[index]);
+            merged.resolve(index, choice).map_err(|_| VaultError::ChangedOnDisk)?;
+        }
+        let mine = stamp(&self.document);
+        restamp(&mut merged.document, &mine.iter().collect::<Vec<_>>());
+        Ok(merged)
+    }
+
+    fn take_merge(&mut self, merged: Merge) -> Saved {
+        let Merge { document, conflicts, ids } = merged;
+        self.document = document;
+        Saved { merged: Some(Merged { conflicts, ids }) }
     }
 
     /// Шифрует файл новым паролем и сразу записывает его.
@@ -245,9 +362,11 @@ impl Vault {
             check_passphrase(passphrase)?;
         }
         let key = protection.map(|(passphrase, options)| Key { passphrase, options });
-        self.document.ensure_header();
-        let bytes = encode(&self.document, key.as_ref())?;
+        let mut next = self.document.clone();
+        restamp(&mut next, &[]);
+        let bytes = encode(&next, key.as_ref())?;
         self.replace_file(bytes, backup)?;
+        self.document = next;
         self.key = key;
         Ok(())
     }
@@ -270,7 +389,11 @@ impl Vault {
         mut document: Document,
         backup: impl FnOnce(&[u8]) -> io::Result<()>,
     ) -> Result<(), VaultError> {
-        document.ensure_header();
+        // Копия становится новой версией текущей истории, а не своей старой.
+        match stamp(&self.document) {
+            Some(current) => restamp(&mut document, &[&current]),
+            None => restamp(&mut document, &[]),
+        };
         let bytes = encode(&document, self.key.as_ref())?;
         self.replace_file(bytes, backup)?;
         self.document = document;
@@ -303,12 +426,29 @@ impl Vault {
     }
 
     fn replace_file(&mut self, bytes: Vec<u8>, backup: impl FnOnce(&[u8]) -> io::Result<()>) -> Result<(), VaultError> {
-        let current = match fs::read(&self.path) {
-            Ok(current) => current,
-            Err(err) if err.kind() == io::ErrorKind::NotFound => return Err(VaultError::ChangedOnDisk),
-            Err(err) => return Err(err.into()),
-        };
-        if current != self.on_disk {
+        let expected = self.on_disk.clone();
+        self.write_over(&expected, bytes, backup)
+    }
+
+    /// Файл на диске сейчас. Удалённый файл — тоже изменение вне приложения.
+    fn read_current(&self) -> Result<Vec<u8>, VaultError> {
+        match fs::read(&self.path) {
+            Ok(current) => Ok(current),
+            Err(err) if err.kind() == io::ErrorKind::NotFound => Err(VaultError::ChangedOnDisk),
+            Err(err) => Err(err.into()),
+        }
+    }
+
+    /// Заменяет файл, если на диске всё ещё `expected`. Иначе файл успели изменить
+    /// ещё раз, пока мы готовили запись.
+    fn write_over(
+        &mut self,
+        expected: &[u8],
+        bytes: Vec<u8>,
+        backup: impl FnOnce(&[u8]) -> io::Result<()>,
+    ) -> Result<(), VaultError> {
+        let current = self.read_current()?;
+        if current != expected {
             return Err(VaultError::ChangedOnDisk);
         }
         backup(&current)?;

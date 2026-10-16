@@ -132,7 +132,7 @@ fn save_leaves_no_temporary_files() {
 }
 
 #[test]
-fn save_refuses_when_the_file_changed_outside_the_app() {
+fn save_merges_when_the_file_changed_outside_the_app() {
     let dir = TempDir::new().unwrap();
     let path = vault_path(&dir);
     let mut vault = Vault::create(&path, pass("p"), FAST).unwrap();
@@ -141,6 +141,61 @@ fn save_refuses_when_the_file_changed_outside_the_app() {
     let mut other = Vault::open(&path, pass("p")).unwrap();
     other.document_mut().add(sample_draft()).unwrap();
     other.save().unwrap();
+
+    let mine = vault.document_mut().add(EntryDraft { title: "beta".into(), ..sample_draft() }).unwrap();
+    let saved = vault.save().unwrap();
+    let merged = saved.merged.expect("слияние");
+    assert!(merged.conflicts.is_empty());
+
+    let reopened = Vault::open(&path, pass("p")).unwrap();
+    let titles: Vec<String> = reopened.document().entries().into_iter().map(|e| e.title).collect();
+    assert_eq!(titles, ["alpha", "beta"]);
+    // Номер моей записи после слияния указывает на неё же.
+    let id = merged.id(mine).unwrap();
+    assert_eq!(vault.document().entry(id).unwrap().title, "beta");
+    // В памяти то же, что в файле.
+    assert_eq!(vault.document().to_markdown(), reopened.document().to_markdown());
+}
+
+#[test]
+fn save_keeps_both_versions_on_a_conflict() {
+    let dir = TempDir::new().unwrap();
+    let path = vault_path(&dir);
+    let mut vault = Vault::create(&path, pass("p"), FAST).unwrap();
+    vault.document_mut().add(sample_draft()).unwrap();
+    vault.save().unwrap();
+
+    let mut other = Vault::open(&path, pass("p")).unwrap();
+    let id = other.document().entries()[0].id;
+    other
+        .document_mut()
+        .update(id, EntryDraft { fields: vec![Field::new("password", "их")], ..sample_draft() })
+        .unwrap();
+    other.save().unwrap();
+
+    let id = vault.document().entries()[0].id;
+    vault
+        .document_mut()
+        .update(id, EntryDraft { fields: vec![Field::new("password", "моё")], ..sample_draft() })
+        .unwrap();
+    let saved = vault.save().unwrap();
+    assert_eq!(saved.merged.unwrap().conflicts.len(), 1);
+
+    let entries = Vault::open(&path, pass("p")).unwrap().document().entries();
+    let pairs: Vec<(String, String)> = entries.iter().map(|e| (e.title.clone(), e.fields[0].value.clone())).collect();
+    assert_eq!(
+        pairs,
+        [("alpha".to_string(), "их".to_string()), ("alpha (копия с этого устройства)".to_string(), "моё".to_string())]
+    );
+}
+
+#[test]
+fn save_refuses_when_the_file_was_reencrypted_elsewhere() {
+    let dir = TempDir::new().unwrap();
+    let path = vault_path(&dir);
+    let mut vault = Vault::create(&path, pass("p"), FAST).unwrap();
+    let mut other = Vault::open(&path, pass("p")).unwrap();
+    other.change_passphrase(pass("другой"), FAST).unwrap();
     let written_by_other = fs::read(&path).unwrap();
 
     vault.document_mut().add(sample_draft()).unwrap();
@@ -300,7 +355,11 @@ fn new_and_saved_vaults_carry_the_format_header() {
     fs::write(&old, "**a**\nk: v\n").unwrap();
     let mut vault = Vault::open_plain(&old).unwrap();
     vault.save().unwrap();
-    assert_eq!(fs::read_to_string(&old).unwrap(), "<!-- mdpass:1 -->\n\n**a**\nk: v\n");
+    let saved = fs::read_to_string(&old).unwrap();
+    let mut lines = saved.lines();
+    assert_eq!(lines.next(), Some("<!-- mdpass:1 -->"));
+    assert!(lines.next().unwrap().starts_with("<!-- mdpass-sync rev="), "{saved}");
+    assert_eq!(lines.collect::<Vec<_>>(), ["", "**a**", "k: v"]);
 }
 
 #[test]
@@ -320,8 +379,6 @@ fn vault_changed_elsewhere_can_be_reloaded_and_saved_again() {
     theirs.document_mut().add(sample_draft()).unwrap();
     theirs.save().unwrap();
 
-    ours.document_mut().add(sample_draft()).unwrap();
-    assert!(matches!(ours.save(), Err(VaultError::ChangedOnDisk)));
     ours.reload().unwrap();
     assert_eq!(ours.document().entries().len(), 1, "видна запись из другой копии");
     ours.document_mut().add(sample_draft()).unwrap();

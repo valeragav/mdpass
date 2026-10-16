@@ -6,3 +6,7 @@
 # everyone who runs the test benefits from these saved cases.
 cc 2a7e85fde64e972b86affac45312268a17e7783d3ade1cc9f21ee9bf641e4d9f # shrinks to start = "**а**\n**a**\n  a", ops = [Update { pick: 2548034306042045461, title: "а", value: "" }, Add { path: [], title: "a", value: "" }]
 cc 434f25965be0701dc60b8b087e1b05bf6dac3e5e299a574d585d9e1580cbcc87 # shrinks to text = "# \n# a\na", fixes = [false, false, false, false]
+cc 56e294d723d2969eb6149d0cd41fa52b6df05bc5d96718d0687e31d885fdb92c # shrinks to start = "**a**\n####### ", ops = [Update { pick: 0, title: "а", value: "" }]
+cc 16a69c408ff5120a11831e22972c84fb87b2ef23edd7020189912cd91a55dc69 # shrinks to start = "# \n**a**\n**a**\n****\n# а\n**а**", ops = [Add { path: ["work"], title: "а", value: "" }, Update { pick: 0, title: "a", value: "" }, MoveEntry { pick: 71959246454838488, path: [], before: None }]
+cc 65445e86699ca8e57fb44aa416f8304f8cd90dd842553f1bda2128ebb85c43fb # shrinks to start = "###### а\n**a**\n**a**\n**а**\n**а**", my_ops = [MoveSection { pick: 0, parent: 6914018722107723835 }, MoveEntry { pick: 175195696105716996, path: ["work"], before: None }, MoveSection { pick: 8988257595146012357, parent: 4153533424818391497 }, Update { pick: 2177673878945548515, title: "b", value: "" }, Add { path: [], title: "a", value: "" }], their_ops = [], choice = 0
+cc 022d32983b902d9e370617cb7dd5f1b0c7c1f312fbcc98ca889e12c1c38a3798 # shrinks to start = "**а**\n**а**\n**a**\n_:\n  *", ops = [Remove { pick: 777066696919749 }, MoveEntry { pick: 12835867570488394909, path: ["work"], before: None }]
