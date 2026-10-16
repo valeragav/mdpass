@@ -26,8 +26,8 @@
       <span>{app.protection === "none" ? "без шифрования" : app.protection === "weak" ? "слабое шифрование" : "зашифровано"}</span>
     </div>
     <div class="actions">
-      <IconButton icon="settings" label="Настройки" bordered size="sm" onclick={() => go("settings")} />
       <Button size="sm" icon="lock" onclick={lockVault}>Заблокировать</Button>
+      <IconButton icon="settings" label="Настройки" bordered size="sm" onclick={() => go("settings")} />
     </div>
   </header>
 
