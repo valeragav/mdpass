@@ -9,11 +9,13 @@
     tone?: "danger" | "accent";
     /// Закрытие по Esc или клику мимо окна.
     oncancel: () => void;
+    /// Окно пошире: для таблиц.
+    wide?: boolean;
     children: Snippet;
     actions: Snippet;
   }
 
-  let { open, title, icon = "warning", tone = "accent", oncancel, children, actions }: Props = $props();
+  let { open, title, icon = "warning", tone = "accent", oncancel, wide = false, children, actions }: Props = $props();
 
   let dialog: HTMLDialogElement | undefined = $state();
   // У каждого диалога свой id заголовка: на экране их бывает несколько сразу.
@@ -42,7 +44,7 @@
   }}
   onclick={onBackdrop}
 >
-  <div class="box">
+  <div class="box" class:wide>
     <div class="head">
       <Icon name={icon} size={22} color={tone === "danger" ? "var(--danger)" : "var(--accent)"} />
       <div class="text">
@@ -65,6 +67,10 @@
 
   dialog::backdrop {
     background: rgba(5, 6, 8, 0.7);
+  }
+
+  .box.wide {
+    width: 640px;
   }
 
   .box {

@@ -7,7 +7,8 @@
   import { showToast } from "./lib/toast.svelte";
   import { app, go } from "./lib/nav.svelte";
   import Toast from "./lib/ui/Toast.svelte";
-  import { forgetEntries, loadEntries, merge, vault } from "./lib/vault.svelte";
+  import { forgetEntries, loadEntries, vault } from "./lib/vault.svelte";
+  import ConflictDialog from "./lib/ui/ConflictDialog.svelte";
   import { setSyncStatus } from "./lib/cloud.svelte";
   import type { SyncStatus } from "./lib/api";
   import Backups from "./screens/Backups.svelte";
@@ -151,15 +152,4 @@
 
 <svelte:window onpointerdown={onActivity} onkeydown={onActivity} onwheel={onActivity} onpointermove={onActivity} />
 
-<ConfirmDialog open={merge.bothKept.length > 0} title="Записи изменили на двух устройствах" oncancel={() => (merge.bothKept = [])}>
-  Пока вы правили, на другом устройстве изменили те же записи. Чтобы ничего не потерять, в файле остались обе
-  версии, ваша — с пометкой «копия с этого устройства». Проверьте их и удалите лишнюю:
-  <ul>
-    {#each merge.bothKept as title (title)}
-      <li>{title}</li>
-    {/each}
-  </ul>
-  {#snippet actions()}
-    <Button variant="primary" autofocus onclick={() => (merge.bothKept = [])}>Понятно</Button>
-  {/snippet}
-</ConfirmDialog>
+<ConflictDialog />

@@ -753,16 +753,30 @@ test("быстрые нажатия на краю списка не теряют
   expect((await page.locator("aside").boundingBox())!.width).toBe(272);
 });
 
-test("запись, изменённую на двух устройствах, просят проверить", async ({ page }) => {
+test("при конфликте выбирают версию записи", async ({ page }) => {
   await unlock(page);
   // Запись «две версии» в заглушке изображает слияние с конфликтом.
   await page.getByRole("button", { name: "Новая запись" }).click();
   await page.getByLabel("Название").fill("две версии");
   await page.getByRole("button", { name: "Сохранить запись" }).click();
-  const dialog = page.getByRole("dialog", { name: "Записи изменили на двух устройствах" });
+  const dialog = page.getByRole("dialog", { name: "Запись изменили на двух устройствах" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByRole("listitem")).toHaveText(["две версии"]);
-  await dialog.getByRole("button", { name: "Понятно" }).click();
+  await expect(dialog.getByRole("columnheader", { name: "Ноутбук" })).toBeVisible();
+  await expect(dialog.getByText("Lk7#vQ2pZx")).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Показать пароли" }).click();
+  await expect(dialog.getByText("Lk7#vQ2pZx")).toBeVisible();
+  await dialog.getByRole("button", { name: "Мою версию" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(sidebar(page).getByRole("button", { name: /копия с этого устройства/ })).toHaveCount(0);
+});
+
+test("при конфликте можно оставить обе версии", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("две версии");
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  const dialog = page.getByRole("dialog", { name: "Запись изменили на двух устройствах" });
+  await dialog.getByRole("button", { name: "Оставить обе" }).click();
   await expect(dialog).toBeHidden();
   await expect(sidebar(page).getByRole("button", { name: /две версии \(копия с этого устройства\)/ })).toBeVisible();
 });

@@ -25,7 +25,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::commands::{CommandError, VaultFile, describe, millis, run_blocking};
-use crate::session::{AppState, MergeNotice, Session};
+use crate::session::{AppState, Session};
 
 const KEYRING_SERVICE: &str = "io.github.valeragav.mdpass";
 /// Состояние синхронизации изменилось.
@@ -38,6 +38,16 @@ const PERIOD: Duration = Duration::from_secs(60);
 const SETTLE: Duration = Duration::from_millis(800);
 
 static WAKE: OnceLock<Sender<()>> = OnceLock::new();
+
+/// Имя этого компьютера: им подписываются версии файла, чтобы окно конфликта
+/// показало, где изменили запись. Без имени окно пишет «другое устройство».
+pub fn host_name() -> Option<String> {
+    let from_env = ["COMPUTERNAME", "HOSTNAME"].iter().find_map(|key| std::env::var(key).ok());
+    from_env
+        .or_else(|| std::fs::read_to_string("/etc/hostname").ok())
+        .map(|name| name.trim().to_string())
+        .filter(|name| !name.is_empty())
+}
 
 /// Синхронизировать как можно скорее: после разблокировки или правки.
 pub fn wake() {
@@ -264,11 +274,7 @@ fn run_once<R: Runtime>(app: &AppHandle<R>) {
     let changed = {
         let mut session = state.lock();
         if let Ok(Synced::Merged(merged)) = &result {
-            let both_kept: Vec<String> =
-                merged.conflicts.iter().filter_map(|c| c.mine.as_ref().map(|e| e.title.clone())).collect();
-            if !both_kept.is_empty() {
-                session.merge_notice = Some(MergeNotice { both_kept });
-            }
+            crate::conflicts::remember(&mut session, merged);
         }
         let changed = session.vault.as_ref().is_some_and(|v| v.path() == path && v.bytes() != before.as_slice());
         if changed {

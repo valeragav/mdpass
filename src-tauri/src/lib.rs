@@ -3,6 +3,7 @@ mod backups;
 mod clipboard;
 mod cloud;
 mod commands;
+mod conflicts;
 mod entries;
 mod importing;
 mod session;
@@ -103,6 +104,7 @@ pub fn run() {
             let backups_root = app.path().app_local_data_dir()?.join("backups");
             app.manage(AppState::new(Session::new(config_path, backups_root)));
             watch_idle(app.handle().clone());
+            mdpass_core::sync::set_device_name(cloud::host_name());
             cloud::start(app.handle().clone());
             Ok(())
         })
@@ -132,7 +134,8 @@ pub fn run() {
             commands::lock,
             commands::touch,
             commands::reload_vault,
-            entries::take_merge_notice,
+            conflicts::conflicts,
+            conflicts::resolve_conflict,
             cloud::cloud_status,
             cloud::cloud_connect,
             cloud::cloud_logout,
