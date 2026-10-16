@@ -7,7 +7,9 @@
   import { showToast } from "./lib/toast.svelte";
   import { app, go } from "./lib/nav.svelte";
   import Toast from "./lib/ui/Toast.svelte";
-  import { forgetEntries, loadEntries, vault } from "./lib/vault.svelte";
+  import { forgetEntries, loadEntries, merge, vault } from "./lib/vault.svelte";
+  import { setSyncStatus } from "./lib/cloud.svelte";
+  import type { SyncStatus } from "./lib/api";
   import Backups from "./screens/Backups.svelte";
   import EntryEditor from "./screens/EntryEditor.svelte";
   import FileError from "./screens/FileError.svelte";
@@ -82,9 +84,17 @@
       forgetEntries();
       showToast(event.payload === "minimized" ? "Хранилище заблокировано: окно свернули" : "Хранилище заблокировано из-за бездействия");
     });
+    // Синхронизация поменяла записи. На других экранах список перечитается, когда
+    // вернутся к нему: главный экран перечитывает его сам.
+    const unlistenChanged = listen("vault-changed", async () => {
+      if (app.screen !== "main") return;
+      await loadEntries();
+      showToast("Подтянуты изменения из облака");
+    });
+    const unlistenStatus = listen<SyncStatus>("cloud-status", (event) => setSyncStatus(event.payload));
     init();
     return () => {
-      unlisten.then((stop) => stop());
+      for (const stop of [unlisten, unlistenChanged, unlistenStatus]) stop.then((done) => done());
     };
   });
 
@@ -128,8 +138,9 @@
 <Toast />
 
 <ConfirmDialog open={changedOnDisk} title="Файл изменён вне приложения" oncancel={() => (changedOnDisk = false)}>
-  Похоже, файл обновила синхронизация или другая копия mdpass. Последнее изменение не записано, чтобы не затереть
-  чужие правки. Перечитайте файл и повторите изменение.
+  Файл обновила синхронизация или другая копия mdpass, и объединить изменения не получилось: файл перешифровали другим
+  паролем, удалили или он не читается. Последнее изменение не записано, чтобы не затереть чужие правки. Перечитайте
+  файл и повторите изменение.
   {#snippet actions()}
     <Button onclick={() => (changedOnDisk = false)}>Позже</Button>
     <Button variant="primary" autofocus disabled={reloading} onclick={reloadVault}>
@@ -139,3 +150,16 @@
 </ConfirmDialog>
 
 <svelte:window onpointerdown={onActivity} onkeydown={onActivity} onwheel={onActivity} onpointermove={onActivity} />
+
+<ConfirmDialog open={merge.bothKept.length > 0} title="Записи изменили на двух устройствах" oncancel={() => (merge.bothKept = [])}>
+  Пока вы правили, на другом устройстве изменили те же записи. Чтобы ничего не потерять, в файле остались обе
+  версии, ваша — с пометкой «копия с этого устройства». Проверьте их и удалите лишнюю:
+  <ul>
+    {#each merge.bothKept as title (title)}
+      <li>{title}</li>
+    {/each}
+  </ul>
+  {#snippet actions()}
+    <Button variant="primary" autofocus onclick={() => (merge.bothKept = [])}>Понятно</Button>
+  {/snippet}
+</ConfirmDialog>

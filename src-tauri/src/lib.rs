@@ -1,6 +1,7 @@
 mod backups;
 #[cfg(desktop)]
 mod clipboard;
+mod cloud;
 mod commands;
 mod entries;
 mod importing;
@@ -102,6 +103,7 @@ pub fn run() {
             let backups_root = app.path().app_local_data_dir()?.join("backups");
             app.manage(AppState::new(Session::new(config_path, backups_root)));
             watch_idle(app.handle().clone());
+            cloud::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -130,6 +132,16 @@ pub fn run() {
             commands::lock,
             commands::touch,
             commands::reload_vault,
+            entries::take_merge_notice,
+            cloud::cloud_status,
+            cloud::cloud_connect,
+            cloud::cloud_logout,
+            cloud::cloud_link,
+            cloud::cloud_unlink,
+            cloud::cloud_sync_now,
+            cloud::cloud_hold,
+            cloud::cloud_list,
+            cloud::cloud_download,
             commands::rename_vault,
             commands::change_protection,
             settings::update_settings,

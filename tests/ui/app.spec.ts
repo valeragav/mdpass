@@ -753,6 +753,20 @@ test("быстрые нажатия на краю списка не теряют
   expect((await page.locator("aside").boundingBox())!.width).toBe(272);
 });
 
+test("запись, изменённую на двух устройствах, просят проверить", async ({ page }) => {
+  await unlock(page);
+  // Запись «две версии» в заглушке изображает слияние с конфликтом.
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("две версии");
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  const dialog = page.getByRole("dialog", { name: "Записи изменили на двух устройствах" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("listitem")).toHaveText(["две версии"]);
+  await dialog.getByRole("button", { name: "Понятно" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(sidebar(page).getByRole("button", { name: /две версии \(копия с этого устройства\)/ })).toBeVisible();
+});
+
 test("файл, изменённый вне приложения, предлагают перечитать", async ({ page }) => {
   await unlock(page);
   await page.getByRole("button", { name: "Новая запись" }).click();
@@ -762,4 +776,46 @@ test("файл, изменённый вне приложения, предлаг
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Перечитать файл" }).click();
   await expect(page.getByRole("status")).toContainText("Файл перечитан");
+});
+
+test("Яндекс Диск подключается токеном, и хранилище начинает синхронизироваться", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Облако" }).click();
+  await page.getByLabel("OAuth-токен").fill("y0_test-token");
+  await page.getByRole("button", { name: "Подключить", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Яндекс Диск подключён");
+
+  await page.getByRole("button", { name: "Синхронизировать", exact: true }).click();
+  await expect(page.getByText("Синхронизировано в 12:30")).toBeVisible();
+  await page.getByRole("button", { name: "Отключить" }).click();
+  await expect(page.getByRole("button", { name: "Синхронизировать", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Выйти" }).click();
+  await expect(page.getByLabel("OAuth-токен")).toBeVisible();
+});
+
+test("на новом компьютере хранилище открывается из облака", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Создать новое хранилище" }).click();
+  await page.getByRole("button", { name: "Открыть из облака" }).click();
+
+  const connect = page.getByRole("dialog", { name: "Подключить облако" });
+  await connect.getByLabel("OAuth-токен").fill("y0_test-token");
+  await connect.getByRole("button", { name: "Подключить", exact: true }).click();
+
+  const pick = page.getByRole("dialog", { name: "Открыть из облака" });
+  await pick.getByRole("button", { name: "vault.md.age" }).click();
+  await expect(page.getByLabel("Мастер-пароль")).toBeVisible();
+  await expect(page.getByRole("button", { name: /new\.md\.age/ })).toBeVisible();
+  await expect(page.getByText("Файл не найден")).toHaveCount(0);
+});
+
+test("Google Drive выбирается переключателем и подключается своим токеном", async ({ page }) => {
+  await unlock(page);
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Облако" }).click();
+  await page.getByRole("button", { name: "Google Drive" }).click();
+  await page.getByLabel("OAuth-токен").fill("ya29.test-token");
+  await page.getByRole("button", { name: "Подключить", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Google Drive подключён");
 });

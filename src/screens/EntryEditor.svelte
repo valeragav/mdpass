@@ -217,6 +217,13 @@
 
   onDestroy(stopDrag);
 
+  // Пока запись правят, синхронизация не меняет записи: номер записи остаётся верным,
+  // а правка не наложится на версию из облака посреди ввода.
+  api.cloudHold(true).catch(() => {});
+  onDestroy(() => {
+    api.cloudHold(false).catch(() => {});
+  });
+
   function draft() {
     // Поля без ключа и пустые поля из шаблона в файл не пишутся.
     const fields: FieldInput[] = rows

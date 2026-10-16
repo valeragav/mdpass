@@ -1,7 +1,7 @@
 <script lang="ts" module>
   // Вкладка запоминается, пока приложение открыто: после резервных копий
   // «Настройки» возвращают туда же.
-  let lastTab: "security" | "file" | "look" | "keys" = "security";
+  let lastTab: "security" | "file" | "cloud" | "look" | "keys" = "security";
 
   /// Вариант в группе кнопок-переключателей.
   export interface Choice {
@@ -14,7 +14,7 @@
 
 <script lang="ts">
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
-  import { api, errorText, type Settings } from "../lib/api";
+  import { api, errorText, type CloudProvider, type Settings } from "../lib/api";
   import { app, go } from "../lib/nav.svelte";
   import { showToast } from "../lib/toast.svelte";
   import Button from "../lib/ui/Button.svelte";
@@ -22,13 +22,16 @@
   import Logo from "../lib/ui/Logo.svelte";
   import { PROTECTION_LABEL } from "../lib/ui/ProtectionPicker.svelte";
   import { IS_MAC, keyLabel, SHORTCUTS } from "../lib/shortcuts";
+  import { cloud, refreshCloud, statusText } from "../lib/cloud.svelte";
+  import CloudConnect from "../lib/ui/CloudConnect.svelte";
   import ChangeProtection from "./settings/ChangeProtection.svelte";
   import RenameVault from "./settings/RenameVault.svelte";
 
-  type Tab = "security" | "file" | "look" | "keys";
+  type Tab = "security" | "file" | "cloud" | "look" | "keys";
   const TABS: [Tab, string][] = [
     ["security", "Безопасность"],
     ["file", "Файл и копии"],
+    ["cloud", "Облако"],
     ["look", "Внешний вид"],
     ["keys", "Горячие клавиши"],
   ];
@@ -101,6 +104,29 @@
 
   const themeName = (t: Settings["theme"]) => THEMES.find(([id]) => id === t)?.[1] ?? t;
   const sizeName = (t: Settings["textSize"]) => SIZES.find(([id]) => id === t)?.[1] ?? t;
+
+  $effect(() => {
+    if (tab === "cloud") refreshCloud();
+  });
+
+  /// Действие с облаком: потом состояние перечитывается.
+  async function cloudAction(action: () => Promise<void>, done?: string) {
+    try {
+      await action();
+      if (done) showToast(done);
+    } catch (err) {
+      showToast(errorText(err));
+    }
+    await refreshCloud();
+  }
+
+  const PROVIDER_NAME: Record<CloudProvider, string> = { yandex: "Яндекс Диск", google: "Google Drive" };
+  const providerName = (p: CloudProvider | null) => (p ? PROVIDER_NAME[p] : "Облако");
+
+  async function cloudConnected() {
+    await refreshCloud();
+    showToast(`${providerName(cloud.view?.provider ?? null)} подключён`);
+  }
 
   function openBackups() {
     app.backupsFrom = "settings";
@@ -222,6 +248,70 @@
           <div>
             <Button icon="generate" onclick={openBackups}>Открыть резервные копии</Button>
           </div>
+        {:else if tab === "cloud"}
+          <h1>Облако</h1>
+          {#if !cloud.view}
+            <p class="hint">…</p>
+          {:else if !cloud.view.connected}
+            <div class="row stacked">
+              <div>
+                <div class="name">Синхронизация</div>
+                <div class="hint">
+                  Хранилище синхронизируется между компьютерами через служебную папку приложения в облаке.
+                  В облако уходит только зашифрованный файл
+                </div>
+              </div>
+              <CloudConnect ondone={cloudConnected} />
+            </div>
+          {:else}
+            <div class="row">
+              <div>
+                <div class="name">{providerName(cloud.view.provider)} подключён</div>
+                <div class="hint">mdpass видит только свою служебную папку в облаке</div>
+              </div>
+              <Button size="sm" onclick={() => cloudAction(api.cloudLogout, `Вы вышли из ${providerName(cloud.view?.provider ?? null)}`)}>
+                Выйти
+              </Button>
+            </div>
+            {#if cloud.view.linked}
+              <div class="row">
+                <div>
+                  <div class="name">Синхронизация хранилища</div>
+                  <div class="hint" aria-live="polite">{statusText(cloud.view.status)}</div>
+                </div>
+                <div class="file-row">
+                  <Button size="sm" disabled={cloud.view.status.kind === "syncing"} onclick={() => cloudAction(api.cloudSyncNow)}>
+                    Синхронизировать сейчас
+                  </Button>
+                  <Button size="sm" onclick={() => cloudAction(api.cloudUnlink, "Хранилище больше не синхронизируется")}>
+                    Отключить
+                  </Button>
+                </div>
+              </div>
+            {:else if !cloud.view.encrypted}
+              <div class="row">
+                <div>
+                  <div class="name">Синхронизация хранилища</div>
+                  <div class="hint">
+                    Хранилище без шифрования в облако не отправляется. Включите шифрование на вкладке «Безопасность»
+                  </div>
+                </div>
+              </div>
+            {:else}
+              <div class="row">
+                <div>
+                  <div class="name">Синхронизация хранилища</div>
+                  <div class="hint">
+                    Файл появится в облаке в служебной папке приложения как {app.vault?.name}. Если такой файл там уже
+                    есть, записи объединятся
+                  </div>
+                </div>
+                <Button size="sm" variant="primary" onclick={() => cloudAction(api.cloudLink, "Синхронизация включена")}>
+                  Синхронизировать
+                </Button>
+              </div>
+            {/if}
+          {/if}
         {:else if tab === "keys"}
           <h1>Горячие клавиши</h1>
           <p class="hint">

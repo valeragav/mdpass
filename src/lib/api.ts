@@ -28,6 +28,12 @@ export interface Settings {
   sidebarWidth: number;
 }
 
+/// Файл изменили на другом устройстве, и изменения слиты при записи.
+export interface MergeNotice {
+  /// Записи, которые изменили с двух сторон: в файле остались обе версии.
+  bothKept: string[];
+}
+
 export interface Status {
   unlocked: boolean;
   lastVault: VaultFile | null;
@@ -53,7 +59,35 @@ export type CommandError =
   | { kind: "clipboard"; message: string }
   | { kind: "invalid"; message: string }
   | { kind: "otherPassphrase" }
+  | { kind: "stale" }
+  | { kind: "cloud"; message: string }
   | { kind: "io"; message: string };
+
+/// Как идёт синхронизация с облаком.
+export type SyncStatus =
+  | { kind: "idle" }
+  | { kind: "syncing" }
+  | { kind: "synced"; atMs: number }
+  | { kind: "offline"; message: string }
+  | { kind: "needsLogin" }
+  | { kind: "failed"; message: string };
+
+export type CloudProvider = "yandex" | "google";
+
+export interface CloudView {
+  /// Облако, для которого сохранён токен. `null` — ни одно не подключено.
+  provider: CloudProvider | null;
+  /// Токен введён.
+  connected: boolean;
+  /// Client ID, который ввели вместе с токеном, для справки.
+  clientId: string | null;
+  /// Связано ли открытое хранилище с облаком.
+  linked: boolean;
+  /// Открытое хранилище без шифрования в облако не отправляется.
+  encrypted: boolean;
+  fileName: string | null;
+  status: SyncStatus;
+}
 
 export interface FieldView {
   key: string;
@@ -90,7 +124,7 @@ export interface DraftInput {
   fields: FieldInput[];
 }
 
-export type BackupKind = "add" | "update" | "delete" | "passphrase" | "restore" | "import" | "move";
+export type BackupKind = "add" | "update" | "delete" | "passphrase" | "restore" | "import" | "move" | "sync";
 
 export interface BackupView {
   id: string;
@@ -183,6 +217,10 @@ export function errorText(err: unknown): string {
       return err.message;
     case "otherPassphrase":
       return "Копия зашифрована прежним мастер-паролем: она сделана до его смены";
+    case "stale":
+      return "Записи обновились из облака. Повторите действие";
+    case "cloud":
+      return err.message;
     case "io":
       return `Ошибка доступа к файлу: ${err.message}`;
   }
@@ -226,6 +264,18 @@ export const api = {
   /// Забыть копию, открытую на экране копий: её расшифрованный текст больше не нужен.
   closeBackup: () => invoke<void>("close_backup"),
   entries: () => invoke<EntryView[]>("entries"),
+  takeMergeNotice: () => invoke<MergeNotice | null>("take_merge_notice"),
+  cloudStatus: () => invoke<CloudView>("cloud_status"),
+  cloudConnect: (provider: CloudProvider, clientId: string, token: string) =>
+    call<void>("cloud_connect", { provider, clientId, token }),
+  cloudLogout: () => invoke<void>("cloud_logout"),
+  cloudLink: () => invoke<void>("cloud_link"),
+  cloudUnlink: () => invoke<void>("cloud_unlink"),
+  cloudSyncNow: () => invoke<void>("cloud_sync_now"),
+  /// Пока открыт редактор записи, синхронизация не меняет записи.
+  cloudHold: (hold: boolean) => invoke<void>("cloud_hold", { hold }),
+  cloudList: () => invoke<string[]>("cloud_list"),
+  cloudDownload: (name: string, path: string) => invoke<VaultFile>("cloud_download", { name, path }),
   revealField: (entryId: number, field: number) => invoke<string>("reveal_field", { entryId, field }),
   copyField: (entryId: number, field: number) => invoke<void>("copy_field", { entryId, field }),
   addEntry: (draft: DraftInput) => call<number>("add_entry", { draft }),

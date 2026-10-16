@@ -6,13 +6,14 @@
 use mdpass_core::backup::BackupKind;
 use mdpass_core::format::{Document, Entry, EntryDraft, EntryId, Favorite, Field, FormatError};
 use mdpass_core::password;
+use mdpass_core::vault::Merged;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use zeroize::Zeroizing;
 
 use crate::backups::{BackupPolicy, no_backup};
 use crate::commands::{CommandError, run_blocking};
-use crate::session::{AppState, Session};
+use crate::session::{AppState, MergeNotice, Session};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -63,6 +64,9 @@ impl From<&Entry> for EntryView {
 
 fn field_value(session: &Session, entry_id: u64, field: usize) -> Result<Zeroizing<String>, CommandError> {
     let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
+    if !session.ids_fresh {
+        return Err(CommandError::Stale);
+    }
     let entry = vault.document().entry(EntryId::from_raw(entry_id)).ok_or(CommandError::EntryNotFound)?;
     let field = entry.fields.get(field).ok_or(CommandError::EntryNotFound)?;
     Ok(Zeroizing::new(field.value.clone()))
@@ -87,9 +91,11 @@ fn field_key(session: &Session, entry_id: u64, field: usize) -> Result<String, C
 
 #[tauri::command(async)]
 pub fn entries(state: State<'_, AppState>) -> Result<Vec<EntryView>, CommandError> {
-    let session = state.lock();
+    let mut session = state.lock();
     let vault = session.vault.as_ref().ok_or(CommandError::Locked)?;
-    Ok(vault.document().entries().iter().map(EntryView::from).collect())
+    let entries = vault.document().entries().iter().map(EntryView::from).collect();
+    session.ids_fresh = true;
+    Ok(entries)
 }
 
 #[tauri::command(async)]
@@ -176,9 +182,31 @@ impl From<FormatError> for CommandError {
     }
 }
 
-/// Меняет документ и сразу записывает файл. Если запись не удалась, документ
-/// в памяти возвращается к прежнему виду, чтобы он не расходился с файлом.
-pub(crate) fn edit<T>(
+/// Результат правки после слияния: номера записей в слитом документе другие.
+pub(crate) trait AfterMerge {
+    fn after_merge(self, merged: &Merged) -> Self;
+}
+
+impl AfterMerge for () {
+    fn after_merge(self, _: &Merged) -> Self {}
+}
+
+impl AfterMerge for usize {
+    fn after_merge(self, _: &Merged) -> Self {
+        self
+    }
+}
+
+impl AfterMerge for EntryId {
+    fn after_merge(self, merged: &Merged) -> Self {
+        merged.id(self).unwrap_or(self)
+    }
+}
+
+/// Меняет документ и сразу записывает файл. Если файл изменили вне приложения,
+/// изменения сливаются (см. `Vault::save_with_backup`). Если запись не удалась,
+/// документ в памяти возвращается к прежнему виду, чтобы он не расходился с файлом.
+pub(crate) fn edit<T: AfterMerge>(
     session: &mut Session,
     kind: BackupKind,
     change: impl FnOnce(&mut Document) -> Result<T, FormatError>,
@@ -189,12 +217,15 @@ pub(crate) fn edit<T>(
 
 /// Как `edit`, но с заданным правилом копий: например, восстановление делает копию
 /// всегда, даже если копии выключены, — иначе его нельзя было бы отменить.
-pub(crate) fn edit_with<T>(
+pub(crate) fn edit_with<T: AfterMerge>(
     session: &mut Session,
     policy: Option<BackupPolicy>,
     kind: BackupKind,
     change: impl FnOnce(&mut Document) -> Result<T, FormatError>,
 ) -> Result<T, CommandError> {
+    if !session.ids_fresh {
+        return Err(CommandError::Stale);
+    }
     let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
     let before = vault.document().clone();
     let result = change(vault.document_mut())?;
@@ -202,11 +233,25 @@ pub(crate) fn edit_with<T>(
         Some(policy) => vault.save_with_backup(policy.hook(kind)),
         None => vault.save_with_backup(no_backup),
     };
-    if let Err(err) = saved {
-        *vault.document_mut() = before;
-        return Err(err.into());
-    }
-    Ok(result)
+    let saved = match saved {
+        Ok(saved) => saved,
+        Err(err) => {
+            *vault.document_mut() = before;
+            return Err(err.into());
+        }
+    };
+    crate::cloud::wake();
+    let Some(merged) = saved.merged else { return Ok(result) };
+    log::info!("файл изменили вне приложения: изменения слиты, конфликтов {}", merged.conflicts.len());
+    let both_kept = merged.conflicts.iter().filter_map(|c| c.mine.as_ref().map(|e| e.title.clone())).collect();
+    session.merge_notice = Some(MergeNotice { both_kept });
+    Ok(result.after_merge(&merged))
+}
+
+/// Забирает уведомление о слиянии, если оно есть.
+#[tauri::command]
+pub fn take_merge_notice(state: State<'_, AppState>) -> Option<MergeNotice> {
+    state.lock().merge_notice.take()
 }
 
 #[tauri::command]
