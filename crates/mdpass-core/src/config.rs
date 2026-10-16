@@ -31,6 +31,42 @@ pub struct AppConfig {
     pub accent: String,
     /// Ширина списка записей слева, в пикселях.
     pub sidebar_width: u32,
+    /// Хранилища, которые синхронизируются с облаком. Токен здесь не хранится,
+    /// он в системном хранилище паролей.
+    pub cloud_links: Vec<CloudLink>,
+    /// Облако, которым сейчас пользуется приложение. `None` — не подключено.
+    pub cloud_provider: Option<Provider>,
+    /// Client ID приложения в OAuth облака, которым пользователь выпустил токен.
+    /// Запросам к облаку не нужен: храним только чтобы показать в настройках.
+    pub cloud_client_id: Option<String>,
+}
+
+/// Хранилище, связанное с файлом в облаке.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CloudLink {
+    pub vault: PathBuf,
+    pub provider: Provider,
+    /// Имя файла в папке приложения в облаке.
+    pub file_name: String,
+}
+
+/// Облако для синхронизации. Токены для каждого свои, хранятся в системном
+/// хранилище паролей под отдельным именем — переключение между облаками не теряет
+/// токен прежнего.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Provider {
+    Yandex,
+    Google,
+}
+
+impl Provider {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Yandex => "yandex",
+            Self::Google => "google",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +100,9 @@ impl Default for AppConfig {
             text_size: TextSize::M,
             accent: "#E5A93D".into(),
             sidebar_width: SIDEBAR_WIDTH.1,
+            cloud_links: Vec::new(),
+            cloud_provider: None,
+            cloud_client_id: None,
         }
     }
 }
@@ -76,6 +115,11 @@ pub const RECENT_LIMIT: usize = 5;
 
 impl AppConfig {
     /// Запоминает открытое хранилище: оно становится последним и первым в недавних.
+    /// Связь хранилища с облаком.
+    pub fn cloud_link(&self, vault: &Path) -> Option<&CloudLink> {
+        self.cloud_links.iter().find(|link| link.vault == vault)
+    }
+
     pub fn remember(&mut self, path: PathBuf) {
         self.recent_vaults.retain(|p| p != &path);
         self.recent_vaults.insert(0, path.clone());
@@ -88,6 +132,11 @@ impl AppConfig {
         for path in &mut self.recent_vaults {
             if path == from {
                 *path = to.clone();
+            }
+        }
+        for link in &mut self.cloud_links {
+            if link.vault == from {
+                link.vault = to.clone();
             }
         }
         if self.last_vault.as_deref() == Some(from) {

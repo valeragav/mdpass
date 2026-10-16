@@ -243,6 +243,9 @@ let settings = {
   accent: "#E5A93D",
   sidebarWidth: 320,
 };
+let mergeNotice: { bothKept: string[] } | null = null;
+// Облако в заглушке: подключается сразу, синхронизация — сразу.
+const cloudState = { provider: null as "yandex" | "google" | null, clientId: null as string | null, linked: false };
 let lastVault: string | null = `${HOME}/Documents/vault.md.age`;
 let retryUntil = 0;
 
@@ -305,11 +308,63 @@ mockIPC(
     case "reload_vault":
       renumber();
       return null;
+    case "cloud_status":
+      return {
+        provider: cloudState.provider,
+        connected: cloudState.provider !== null,
+        clientId: cloudState.clientId,
+        linked: cloudState.linked,
+        encrypted: protection !== "none",
+        fileName: cloudState.linked ? (lastVault?.split("/").pop() ?? null) : null,
+        status: cloudState.linked ? { kind: "synced", atMs: Date.parse("2026-10-16T12:30:00") } : { kind: "idle" },
+      };
+    case "cloud_connect": {
+      const { provider, clientId, token } = args as { provider: "yandex" | "google"; clientId: string; token: string };
+      if (!token.trim()) throw { kind: "invalid", message: "Введите токен" };
+      cloudState.provider = provider;
+      cloudState.clientId = clientId.trim() || null;
+      return null;
+    }
+    case "cloud_logout":
+      cloudState.provider = null;
+      cloudState.clientId = null;
+      cloudState.linked = false;
+      return null;
+    case "cloud_link":
+      cloudState.linked = true;
+      return null;
+    case "cloud_unlink":
+      cloudState.linked = false;
+      return null;
+    case "cloud_sync_now":
+    case "cloud_hold":
+      return null;
+    case "cloud_list":
+      if (cloudState.provider === null) throw { kind: "cloud", message: "Сначала войдите в облако" };
+      return ["vault.md.age"];
+    case "cloud_download": {
+      const path = (args as { path: string }).path;
+      lastVault = path;
+      // Файл только что скачан: он есть и зашифрован.
+      return { ...describe(path), exists: true, encrypted: true };
+    }
+    case "take_merge_notice": {
+      const notice = mergeNotice;
+      mergeNotice = null;
+      return notice;
+    }
     case "add_entry": {
-      // Запись «конфликт» изображает файл, который изменили вне приложения.
-      if ((args as { draft: Draft }).draft.title === "конфликт") throw { kind: "changedOnDisk" };
+      // Запись «конфликт» изображает файл, который изменили вне приложения так, что
+      // слить не вышло; «две версии» — слияние, где запись изменили с двух сторон.
+      const title = (args as { draft: Draft }).draft.title;
+      if (title === "конфликт") throw { kind: "changedOnDisk" };
       const id = nextId++;
-      ENTRIES.push({ id, ...applyDraft((args as { draft: Draft }).draft) });
+      const draft = (args as { draft: Draft }).draft;
+      ENTRIES.push({ id, ...applyDraft(draft) });
+      if (title === "две версии") {
+        ENTRIES.push({ id: nextId++, ...applyDraft({ ...draft, title: `${title} (копия с этого устройства)` }) });
+        mergeNotice = { bothKept: [title] };
+      }
       return id;
     }
     case "update_entry": {

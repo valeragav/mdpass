@@ -19,6 +19,10 @@ interface VaultState {
 
 export const vault = $state<VaultState>({ entries: [], selectedId: null, selectedSection: null, revealed: {} });
 
+/// Записи, которые при последнем слиянии изменили на двух устройствах. Пока список
+/// не пуст, окно просит проверить их.
+export const merge = $state({ bothKept: [] as string[] });
+
 /// Свёрнутые разделы. Живут только в памяти: названия разделов не должны оставаться
 /// на диске в открытом виде. Забываются при блокировке.
 export const collapsed = new SvelteSet<string>();
@@ -60,6 +64,8 @@ export async function loadEntries() {
   const entries = await api.entries();
   hideSecrets();
   vault.entries = entries;
+  const notice = await api.takeMergeNotice();
+  if (notice?.bothKept.length) merge.bothKept = notice.bothKept;
   const section = vault.selectedSection;
   if (section && !entries.some((e) => section.every((part, i) => e.path[i] === part))) {
     vault.selectedSection = null;
@@ -104,6 +110,7 @@ export async function toggleFavorite(entry: EntryView) {
 /// Стирает записи из памяти интерфейса и показывает экран разблокировки.
 export function forgetEntries() {
   vault.entries = [];
+  merge.bothKept = [];
   hideSecrets();
   collapsed.clear();
   vault.selectedId = null;

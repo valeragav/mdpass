@@ -31,6 +31,8 @@ use zeroize::Zeroize;
 pub const FORMAT_VERSION: u32 = 1;
 const HEADER_START: &str = "<!-- mdpass:";
 const HEADER_END: &str = " -->";
+/// Начало служебных строк после метки формата, например `<!-- mdpass-sync … -->`.
+const META_START: &str = "<!-- mdpass-";
 
 /// Самый глубокий заголовок Markdown: столько уровней разделов бывает.
 const MAX_LEVEL: usize = 6;
@@ -346,13 +348,39 @@ impl Document {
         self.nodes.insert(0, Node::Text(header));
     }
 
-    /// В документе нет ни записей, ни разделов, ни текста, кроме метки формата.
+    /// Служебная строка сразу после метки формата, которая начинается с `prefix`.
+    pub(crate) fn meta_line(&self, prefix: &str) -> Option<&str> {
+        self.format_version()?;
+        let Some(Node::Text(text)) = self.nodes.first() else { return None };
+        let line = content(text.split_inclusive('\n').nth(1)?);
+        line.starts_with(prefix).then_some(line)
+    }
+
+    /// Ставит служебную строку сразу после метки формата или заменяет прежнюю
+    /// с тем же `prefix`. Метка формата ставится, если её не было.
+    pub(crate) fn set_meta_line(&mut self, prefix: &str, line: &str) {
+        self.ensure_header();
+        let eol = self.eol;
+        let Some(Node::Text(text)) = self.nodes.first_mut() else { unreachable!("метка формата") };
+        let mut lines: Vec<String> = text.split_inclusive('\n').map(str::to_string).collect();
+        if !lines[0].ends_with('\n') {
+            lines[0].push_str(eol);
+        }
+        let new = format!("{line}{eol}");
+        match lines.get(1) {
+            Some(second) if content(second).starts_with(prefix) => lines[1] = new,
+            _ => lines.insert(1, new),
+        }
+        text.zeroize();
+        *text = lines.concat();
+    }
+
+    /// В документе нет ни записей, ни разделов, ни текста, кроме служебных строк.
     pub fn is_blank(&self) -> bool {
         let markdown = self.to_markdown();
-        let mut lines = markdown.trim_start_matches('\u{feff}').lines();
-        let first = lines.clone().next().unwrap_or_default();
-        if first.starts_with(HEADER_START) {
-            lines.next();
+        let mut lines = markdown.trim_start_matches('\u{feff}').lines().peekable();
+        if lines.next_if(|first| first.starts_with(HEADER_START)).is_some() {
+            lines.next_if(|second| second.starts_with(META_START));
         }
         lines.all(|line| line.trim().is_empty())
     }
@@ -497,6 +525,19 @@ impl Document {
     pub fn rewrite(&mut self, id: EntryId) -> Result<(), FormatError> {
         let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
         if let Node::Entry(entry) = &mut self.nodes[index] {
+            entry.raw = None;
+        }
+        Ok(())
+    }
+
+    /// Заменяет строки записи, которые не похожи на поле. Обычная правка записи их
+    /// не меняет, а слиянию нужно перенести их из другой версии файла.
+    pub(crate) fn set_extra(&mut self, id: EntryId, extra: Vec<String>) -> Result<(), FormatError> {
+        let index = self.entry_index(id).ok_or(FormatError::NotFound)?;
+        if let Node::Entry(entry) = &mut self.nodes[index]
+            && entry.extra != extra
+        {
+            entry.extra = extra;
             entry.raw = None;
         }
         Ok(())

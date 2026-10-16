@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["src-tauri", "crates/mdpass-core"]
+members = ["src-tauri", "crates/mdpass-core", "crates/mdpass-cloud"]
 
 [workspace.package]
 version = "0.4.1"

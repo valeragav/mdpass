@@ -29,6 +29,26 @@ pub struct Session {
     pub last_import: Option<PathBuf>,
     /// Копия, которую смотрят на экране резервных копий.
     pub open_backup: Option<OpenBackup>,
+    /// Последняя запись слила изменения с другого устройства: интерфейс покажет
+    /// это, когда перечитает записи.
+    pub merge_notice: Option<MergeNotice>,
+    /// Что знаем об облаке для открытого хранилища: путь хранилища и состояние.
+    pub sync_state: Option<(PathBuf, mdpass_core::cloud::SyncState)>,
+    pub cloud_status: crate::cloud::SyncStatus,
+    /// Номера записей у интерфейса верные. Синхронизация, которая заменила документ
+    /// версией из облака, их сбрасывает: пока интерфейс не перечитает записи, команды
+    /// с номерами отказывают, иначе правка попала бы не в ту запись.
+    pub ids_fresh: bool,
+    /// Интерфейс просит пока не менять записи из облака: открыт редактор записи.
+    pub cloud_hold: bool,
+}
+
+/// Что сообщить после слияния. Только названия записей: значений здесь нет.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MergeNotice {
+    /// Записи, которые изменили с двух сторон: в файле остались обе версии.
+    pub both_kept: Vec<String>,
 }
 
 impl Session {
@@ -42,6 +62,11 @@ impl Session {
             last_activity: SystemTime::now(),
             last_import: None,
             open_backup: None,
+            merge_notice: None,
+            sync_state: None,
+            cloud_status: crate::cloud::SyncStatus::Idle,
+            ids_fresh: true,
+            cloud_hold: false,
         }
     }
 
@@ -62,6 +87,9 @@ impl Session {
     pub fn replace_vault(&mut self, vault: Vault) {
         self.open_backup = None;
         self.last_import = None;
+        self.merge_notice = None;
+        self.sync_state = None;
+        self.cloud_status = crate::cloud::SyncStatus::Idle;
         self.vault = Some(vault);
     }
 
@@ -70,6 +98,9 @@ impl Session {
     pub fn lock_vault(&mut self) {
         self.vault = None;
         self.open_backup = None;
+        self.merge_notice = None;
+        self.sync_state = None;
+        self.cloud_status = crate::cloud::SyncStatus::Idle;
         #[cfg(desktop)]
         crate::clipboard::clear_ours();
     }

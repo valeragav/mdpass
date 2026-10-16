@@ -47,6 +47,12 @@ pub enum CommandError {
     Io {
         message: String,
     },
+    /// Записи обновились из облака: интерфейсу нужно их перечитать.
+    Stale,
+    /// Облако недоступно или отказало. В `message` — текст для пользователя.
+    Cloud {
+        message: String,
+    },
 }
 
 impl From<VaultError> for CommandError {
@@ -130,7 +136,7 @@ impl Protection {
     }
 }
 
-fn describe<R: Runtime>(app: &AppHandle<R>, path: &Path) -> VaultFile {
+pub(crate) fn describe<R: Runtime>(app: &AppHandle<R>, path: &Path) -> VaultFile {
     let display = match app.path().home_dir().ok().and_then(|home| path.strip_prefix(home).ok().map(Path::to_path_buf))
     {
         Some(rest) => format!("~/{}", rest.to_string_lossy().replace('\\', "/")),
@@ -246,6 +252,7 @@ pub async fn unlock(
                 session.touch(SystemTime::now());
                 session.config.remember(path);
                 session.save_config();
+                crate::cloud::wake();
                 Ok(protection)
             }
             Err(err) => {
@@ -308,9 +315,17 @@ pub fn rename_vault<R: Runtime>(
     let new_path = old_path.with_file_name(format!("{stem}{extension}"));
     let vault = session.vault.as_mut().ok_or(CommandError::Locked)?;
     vault.rename_to(&new_path)?;
+    let old_sync = crate::cloud::state_dir(&session, &old_path);
     if let Err(err) = session.backup_store(&old_path).move_to(&session.backup_store(&new_path)) {
         log::warn!("не удалось перенести резервные копии: {err}");
     }
+    let new_sync = crate::cloud::state_dir(&session, &new_path);
+    if old_sync.exists()
+        && let Err(err) = std::fs::rename(&old_sync, &new_sync)
+    {
+        log::warn!("не удалось перенести состояние синхронизации: {err}");
+    }
+    session.sync_state = None;
     session.config.renamed(&old_path, new_path.clone());
     session.save_config();
     Ok(describe(&app, &new_path))

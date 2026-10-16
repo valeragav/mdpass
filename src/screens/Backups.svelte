@@ -30,6 +30,7 @@
     restore: "Перед восстановлением копии",
     import: "Перед импортом",
     move: "Перед перемещением",
+    sync: "Перед синхронизацией с облаком",
   };
 
   const dateFormat = new Intl.DateTimeFormat("ru", {

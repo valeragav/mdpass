@@ -32,11 +32,13 @@ pub enum BackupKind {
     Restore,
     Import,
     Move,
+    /// Перед тем как взять версию из облака или слить с ней.
+    Sync,
 }
 
 impl BackupKind {
-    const ALL: [Self; 7] =
-        [Self::Add, Self::Update, Self::Delete, Self::Passphrase, Self::Restore, Self::Import, Self::Move];
+    const ALL: [Self; 8] =
+        [Self::Add, Self::Update, Self::Delete, Self::Passphrase, Self::Restore, Self::Import, Self::Move, Self::Sync];
 
     fn as_str(self) -> &'static str {
         match self {
@@ -47,6 +49,7 @@ impl BackupKind {
             Self::Restore => "restore",
             Self::Import => "import",
             Self::Move => "move",
+            Self::Sync => "sync",
         }
     }
 

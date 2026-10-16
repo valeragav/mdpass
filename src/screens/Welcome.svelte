@@ -9,6 +9,9 @@
   import PasswordInput from "../lib/ui/PasswordInput.svelte";
   import ProtectionPicker, { type Protection } from "../lib/ui/ProtectionPicker.svelte";
   import RecentVaults from "../lib/ui/RecentVaults.svelte";
+  import CloudOpen from "../lib/ui/CloudOpen.svelte";
+
+  let fromCloud = $state(false);
 
   let file = $state<VaultFile | null>(app.defaultVault);
   let protection = $state<Protection>("strong");
@@ -168,6 +171,7 @@
       </Button>
       <Button icon="import" full onclick={createAndImport}>У меня уже есть .md-файл</Button>
       <Button variant="ghost" size="sm" full onclick={openExisting}>Открыть существующее хранилище</Button>
+      <Button variant="ghost" size="sm" full onclick={() => (fromCloud = true)}>Открыть из облака</Button>
     </div>
   </form>
 
@@ -178,6 +182,8 @@
     }}
   />
 </div>
+
+<CloudOpen open={fromCloud} onclose={() => (fromCloud = false)} />
 
 <style>
   .screen {
