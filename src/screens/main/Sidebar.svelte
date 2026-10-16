@@ -918,9 +918,7 @@
     padding: 10px 9px;
     border-radius: 6px;
     background: var(--bg-chrome);
-    box-shadow:
-      0 0 0 1px var(--line),
-      0 4px 12px rgba(0, 0, 0, 0.25);
+    box-shadow: 0 0 0 1px var(--line);
   }
 
   /* Курсор стрелок на кнопке */
