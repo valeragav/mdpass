@@ -113,7 +113,7 @@ pub enum Synced {
     /// Своих изменений не было: взята версия из облака.
     Downloaded,
     /// Изменения с двух сторон слиты и загружены.
-    Merged(Merged),
+    Merged(Box<Merged>),
 }
 
 /// Сколько синхронизированных версий помнить как базы для слияния.
@@ -265,7 +265,7 @@ enum Step {
         bytes: Vec<u8>,
         rev: String,
         expected: String,
-        merged: Option<Merged>,
+        merged: Option<Box<Merged>>,
     },
 }
 
@@ -351,7 +351,7 @@ pub fn sync_with(local: &mut impl Local, cloud: &mut dyn CloudStore) -> Result<S
                 bytes: vault.bytes().to_vec(),
                 rev: rev_of(vault.document()),
                 expected: version.clone(),
-                merged: saved.merged,
+                merged: saved.merged.map(Box::new),
             })
         })?;
         let Step::Upload { bytes, rev, expected, merged } = step else {

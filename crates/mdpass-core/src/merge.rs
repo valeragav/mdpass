@@ -3,8 +3,9 @@
 //!
 //! Результат строится из «их»: записи, которых я не менял, остаются в файле байт
 //! в байт. Мои изменения переносятся поверх обычными правками документа. Если одно
-//! и то же изменили с двух сторон по-разному, это конфликт: в результате остаётся
-//! «их» версия записи, а выбор за пользователем ([`resolve`]).
+//! и то же поле изменили с двух сторон по-разному, это конфликт: всё неспорное
+//! в записи всё равно сливается, в спорных полях остаются «их» значения, а выбор
+//! за пользователем ([`resolve`], [`collapse`]).
 //!
 //! Записи сопоставляются без id в файле: по разделу и названию, потом только по
 //! названию (запись перенесли), потом по полям в том же разделе (переименовали).
@@ -18,12 +19,20 @@ use crate::importer::portable_draft;
 pub struct Conflict {
     /// Моя версия записи. `None` — я её удалил.
     pub mine: Option<Entry>,
-    /// Их версия записи в результате слияния. `None` — её удалили на другом устройстве.
+    /// Запись в результате слияния: неспорные изменения с обеих сторон, в спорных
+    /// частях — их значения. `None` — её удалили на другом устройстве.
     pub theirs: Option<Entry>,
-    /// Что разошлось: ключи полей, а также `title`, `section`, `tags`, `extra`.
-    /// Значения полей сюда не попадают.
+    /// Что разошлось: ключи полей и части записи [`TITLE`], [`SECTION`], [`TAGS`],
+    /// [`EXTRA`]. Значения полей сюда не попадают.
     pub keys: Vec<String>,
 }
+
+/// Части записи, которые не поля. Двоеточия в ключе поля не бывает, так что
+/// с ключами полей они не путаются.
+pub const TITLE: &str = ":title";
+pub const SECTION: &str = ":section";
+pub const TAGS: &str = ":tags";
+pub const EXTRA: &str = ":extra";
 
 #[derive(Debug)]
 pub struct Merge {
@@ -105,8 +114,13 @@ pub fn merge(base: &Document, mine: &Document, theirs: &Document) -> Result<Merg
                 match merge_entry(original, my, their) {
                     Outcome::Keep => {}
                     Outcome::Update(merged) => apply(&mut document, their, &merged)?,
-                    Outcome::Conflict(keys) => {
-                        conflicts.push(Conflict { mine: Some(my.clone()), theirs: Some(their.clone()), keys })
+                    Outcome::Conflict { merged, keys } => {
+                        // Неспорное сливаем сразу, спорное ждёт выбора.
+                        if !same(&merged, their) {
+                            apply(&mut document, their, &merged)?;
+                        }
+                        let merged = document.entry(their.id).unwrap_or(merged);
+                        conflicts.push(Conflict { mine: Some(my.clone()), theirs: Some(merged), keys })
                     }
                 }
             }
@@ -147,11 +161,64 @@ pub fn resolve(document: &mut Document, conflict: &Conflict, choice: Choice) -> 
         (Choice::Theirs, Some(_), Some(their)) => Ok(Some(their.id)),
         (Choice::Theirs | Choice::Both { .. }, None, _) | (Choice::Theirs, _, None) => Ok(None),
         (Choice::Mine, None, Some(their)) => document.remove(their.id).map(|()| None),
-        (Choice::Mine, Some(my), Some(their)) => apply(document, their, my).map(|()| Some(their.id)),
+        (Choice::Mine, Some(my), Some(their)) => {
+            apply(document, their, &take_keys(their, my, &conflict.keys)).map(|()| Some(their.id))
+        }
         (Choice::Mine | Choice::Both { .. }, Some(my), None) => put(document, None, my).map(Some),
         (Choice::Both { title }, Some(my), Some(_)) => put(document, None, &Entry { title, ..my.clone() }).map(Some),
         (Choice::Mine, None, None) => Ok(None),
     }
+}
+
+/// Сворачивает две версии записи в одну, когда при конфликте сохранили обе:
+/// `original` — запись после слияния, `copy` — моя версия рядом с ней. `keep_mine` —
+/// спорные части `keys` берутся из копии, иначе остаются как в `original`. Копия
+/// удаляется. `my_title` — название моей версии: у копии оно с пометкой.
+pub fn collapse(
+    document: &mut Document,
+    original: &Entry,
+    copy: &Entry,
+    keys: &[String],
+    my_title: &str,
+    keep_mine: bool,
+) -> Result<(), FormatError> {
+    let mut work = document.clone();
+    if keep_mine {
+        let mine = Entry { title: my_title.to_string(), ..copy.clone() };
+        apply(&mut work, original, &take_keys(original, &mine, keys))?;
+    }
+    work.remove(copy.id)?;
+    *document = work;
+    Ok(())
+}
+
+/// `target`, в котором части `keys` взяты из `from`.
+fn take_keys(target: &Entry, from: &Entry, keys: &[String]) -> Entry {
+    let mut entry = target.clone();
+    let duplicates = has_duplicate_keys(target) || has_duplicate_keys(from);
+    for key in keys {
+        match key.as_str() {
+            SECTION => entry.path = from.path.clone(),
+            TITLE => entry.title = from.title.clone(),
+            TAGS => entry.tags = from.tags.clone(),
+            EXTRA => entry.extra = from.extra.clone(),
+            // С повторяющимися ключами поле по ключу не найти: берутся все поля.
+            _ if duplicates => entry.fields = from.fields.clone(),
+            key => {
+                let theirs = entry.fields.iter().position(|f| f.key == key);
+                let mine = from.fields.iter().find(|f| f.key == key).cloned();
+                match (theirs, mine) {
+                    (Some(i), Some(field)) => entry.fields[i] = field,
+                    (Some(i), None) => {
+                        entry.fields.remove(i);
+                    }
+                    (None, Some(field)) => entry.fields.push(field),
+                    (None, None) => {}
+                }
+            }
+        }
+    }
+    entry
 }
 
 enum Outcome {
@@ -159,7 +226,8 @@ enum Outcome {
     Keep,
     /// Их запись заменяется слитой.
     Update(Entry),
-    Conflict(Vec<String>),
+    /// Слитая запись с их значениями в спорных частях `keys`.
+    Conflict { merged: Entry, keys: Vec<String> },
 }
 
 fn merge_entry(base: &Entry, mine: &Entry, theirs: &Entry) -> Outcome {
@@ -174,25 +242,24 @@ fn merge_entry(base: &Entry, mine: &Entry, theirs: &Entry) -> Outcome {
     let mut merged = theirs.clone();
     match pick(&base.path, &mine.path, &theirs.path) {
         Some(path) => merged.path = path,
-        None => keys.push("section".to_string()),
+        None => keys.push(SECTION.to_string()),
     }
     match pick(&base.title, &mine.title, &theirs.title) {
         Some(title) => merged.title = title,
-        None => keys.push("title".to_string()),
+        None => keys.push(TITLE.to_string()),
     }
     match pick(&base.extra, &mine.extra, &theirs.extra) {
         Some(extra) => merged.extra = extra,
-        None => keys.push("extra".to_string()),
+        None => keys.push(EXTRA.to_string()),
     }
-    match merge_fields(base, mine, theirs) {
-        Ok(fields) => merged.fields = fields,
-        Err(clashing) => keys.extend(clashing),
-    }
+    let (fields, clashing) = merge_fields(base, mine, theirs);
+    merged.fields = fields;
+    keys.extend(clashing);
     merged.tags = merge_tags(&base.tags, &mine.tags, &theirs.tags);
     // Избранное и его место — не повод для конфликта: берём моё.
     merged.favorite = pick(&base.favorite, &mine.favorite, &theirs.favorite).unwrap_or(mine.favorite);
 
-    if keys.is_empty() { Outcome::Update(merged) } else { Outcome::Conflict(keys) }
+    if keys.is_empty() { Outcome::Update(merged) } else { Outcome::Conflict { merged, keys } }
 }
 
 /// Значение после слияния: изменённое с одной стороны или одинаковое с обеих.
@@ -208,10 +275,14 @@ fn pick<T: PartialEq + Clone>(base: &T, mine: &T, theirs: &T) -> Option<T> {
 }
 
 /// Поля сливаются по ключам. Порядок — их, если там порядок не меняли, иначе мой.
-/// В ошибке — ключи, которые изменили с двух сторон по-разному.
-fn merge_fields(base: &Entry, mine: &Entry, theirs: &Entry) -> Result<Vec<Field>, Vec<String>> {
+/// Второе — ключи, которые изменили с двух сторон по-разному: в них остаются их
+/// значения.
+fn merge_fields(base: &Entry, mine: &Entry, theirs: &Entry) -> (Vec<Field>, Vec<String>) {
     if [base, mine, theirs].iter().any(|e| has_duplicate_keys(e)) {
-        return pick(&base.fields, &mine.fields, &theirs.fields).ok_or_else(|| differing_fields(mine, theirs));
+        return match pick(&base.fields, &mine.fields, &theirs.fields) {
+            Some(fields) => (fields, Vec::new()),
+            None => (theirs.fields.clone(), differing_fields(mine, theirs)),
+        };
     }
     let keys = |e: &Entry| e.fields.iter().map(|f| f.key.clone()).collect::<Vec<_>>();
     let order_from = if keys(theirs) == keys(base) { mine } else { theirs };
@@ -229,10 +300,13 @@ fn merge_fields(base: &Entry, mine: &Entry, theirs: &Entry) -> Result<Vec<Field>
         match pick(&field(base, &key), &field(mine, &key), &field(theirs, &key)) {
             Some(Some(f)) => fields.push(f),
             Some(None) => {}
-            None => clashing.push(key),
+            None => {
+                fields.extend(field(theirs, &key));
+                clashing.push(key);
+            }
         }
     }
-    if clashing.is_empty() { Ok(fields) } else { Err(clashing) }
+    (fields, clashing)
 }
 
 /// Теги — множество: из их списка убираются те, что убрал я, и добавляются мои новые.
@@ -326,17 +400,17 @@ fn has_duplicate_keys(entry: &Entry) -> bool {
 fn differing(a: &Entry, b: &Entry) -> Vec<String> {
     let mut keys = Vec::new();
     if a.path != b.path {
-        keys.push("section".to_string());
+        keys.push(SECTION.to_string());
     }
     if a.title != b.title {
-        keys.push("title".to_string());
+        keys.push(TITLE.to_string());
     }
     keys.extend(differing_fields(a, b));
     if a.tags != b.tags {
-        keys.push("tags".to_string());
+        keys.push(TAGS.to_string());
     }
     if a.extra != b.extra {
-        keys.push("extra".to_string());
+        keys.push(EXTRA.to_string());
     }
     keys
 }

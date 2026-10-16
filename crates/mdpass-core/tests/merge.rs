@@ -201,3 +201,66 @@ fn conflicts_never_carry_secret_values_in_keys() {
     let keys = result.conflicts[0].keys.join(" ");
     assert!(!keys.contains("horse"));
 }
+
+#[test]
+fn conflict_still_merges_the_other_fields() {
+    // Пароль поменяли по-разному, а ssh — только здесь, url — только там.
+    let base = "**web-01**\nssh: deploy@203.0.113.10\npassword: old\nurl: https://a.example.test\n";
+    let mine = "**web-01**\nssh: root@203.0.113.10\npassword: mine\nurl: https://a.example.test\n";
+    let theirs = "**web-01**\nssh: deploy@203.0.113.10\npassword: theirs\nurl: https://b.example.test\n";
+    let result = run(base, mine, theirs);
+    assert_eq!(result.conflicts.len(), 1);
+    assert_eq!(result.conflicts[0].keys, ["password"]);
+    assert_eq!(
+        result.document.to_markdown(),
+        "**web-01**\nssh: root@203.0.113.10\npassword: theirs\nurl: https://b.example.test\n"
+    );
+
+    // «Моя версия» берёт только спорное поле.
+    let mut document = result.document;
+    resolve(&mut document, &result.conflicts[0], Choice::Mine).unwrap();
+    assert_eq!(
+        document.to_markdown(),
+        "**web-01**\nssh: root@203.0.113.10\npassword: mine\nurl: https://b.example.test\n"
+    );
+}
+
+#[test]
+fn collapse_folds_the_copy_back() {
+    use mdpass_core::merge::collapse;
+    let base = "**web-01**\nlogin: a\npassword: old\n";
+    let mine = "**web-01**\nlogin: b\npassword: mine\n";
+    let theirs = "**web-01**\nlogin: a\npassword: theirs\n";
+
+    for keep_mine in [true, false] {
+        let mut result = run(base, mine, theirs);
+        let conflict = result.conflicts[0].clone();
+        resolve(&mut result.document, &conflict, Choice::Both { title: "web-01 (копия)".into() }).unwrap();
+        let entries = result.document.entries();
+        let original = entries.iter().find(|e| e.title == "web-01").unwrap();
+        let copy = entries.iter().find(|e| e.title == "web-01 (копия)").unwrap();
+        collapse(&mut result.document, original, copy, &conflict.keys, "web-01", keep_mine).unwrap();
+
+        let password = if keep_mine { "mine" } else { "theirs" };
+        // После удалённой копии может остаться пустая строка в конце: так удаляется любая запись.
+        assert_eq!(result.document.to_markdown().trim_end(), format!("**web-01**\nlogin: b\npassword: {password}"));
+    }
+}
+
+#[test]
+fn collapse_keeps_my_title_not_the_copy_mark() {
+    use mdpass_core::merge::{TITLE, collapse};
+    let base = "**web**\nk: v\n";
+    let mine = "**web (мой)**\nk: v\n";
+    let theirs = "**web (их)**\nk: v\n";
+    let mut result = run(base, mine, theirs);
+    let conflict = result.conflicts[0].clone();
+    assert_eq!(conflict.keys, [TITLE]);
+    resolve(&mut result.document, &conflict, Choice::Both { title: "web (мой) (копия)".into() }).unwrap();
+    let entries = result.document.entries();
+    let original = entries.iter().find(|e| e.title == "web (их)").unwrap();
+    let copy = entries.iter().find(|e| e.title == "web (мой) (копия)").unwrap();
+    collapse(&mut result.document, original, copy, &conflict.keys, "web (мой)", true).unwrap();
+    let titles: Vec<String> = result.document.entries().into_iter().map(|e| e.title).collect();
+    assert_eq!(titles, ["web (мой)"]);
+}
