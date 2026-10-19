@@ -923,6 +923,11 @@
     overflow: hidden;
   }
 
+  /* Телефон: места мало, видна одна строка чипов, остальные — по «Все теги». */
+  aside.narrow .tags:not(.open) {
+    max-height: 28px;
+  }
+
   .tags.open {
     max-height: 40vh;
     overflow-y: auto;
