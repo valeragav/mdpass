@@ -2,7 +2,26 @@
   // Раскрыт ли длинный список избранного.
   let favoritesOpen = $state(false);
   // Телефон: избранное свёрнуто до заголовка, чтобы осталось место под разделы.
-  let favoritesHidden = $state(false);
+  // Запоминается на этом устройстве. Хранилище браузера может быть недоступно.
+  const HIDDEN_KEY = "mdpass.favoritesHidden";
+  let favoritesHidden = $state(readHidden());
+
+  function readHidden(): boolean {
+    try {
+      return localStorage.getItem(HIDDEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function setHidden(hidden: boolean) {
+    favoritesHidden = hidden;
+    try {
+      localStorage.setItem(HIDDEN_KEY, hidden ? "1" : "0");
+    } catch {
+      // Не запомнится до перезапуска, сворачивание всё равно работает.
+    }
+  }
 </script>
 
 <script lang="ts">
@@ -686,7 +705,7 @@
           onclick={() => {
             keyNav.zone = "list";
             cursorIn = "fav-head";
-            if (layout.narrow) favoritesHidden = !favoritesHidden;
+            if (layout.narrow) setHidden(!favoritesHidden);
             else favoritesOpen = !favoritesOpen;
           }}
         >
@@ -775,8 +794,10 @@
               keyNav.zone = "list";
               cursorIn = "list";
               // Первый щелчок открывает справа записи раздела, следующий сворачивает его.
-              // Стрелка слева сворачивает сразу.
-              const onChevron = (e.target as HTMLElement).closest(".chevron") !== null;
+              // Стрелка слева сворачивает сразу. Её зона — всё левее стрелки и немного
+              // правее: пальцем в значок 14px не попасть. У Enter нет координат (detail 0).
+              const chevron = (e.currentTarget as HTMLElement).querySelector(".chevron")!;
+              const onChevron = e.detail > 0 && e.clientX <= chevron.getBoundingClientRect().right + 8;
               // Телефон: стрелка сворачивает, название открывает раздел отдельным экраном.
               if (layout.narrow) {
                 if (onChevron) toggle(row);

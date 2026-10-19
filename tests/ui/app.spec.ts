@@ -1100,6 +1100,43 @@ test("на узком экране «Файл и копии» и резервн�
   await expect(page.getByRole("button", { name: "Файл и копии" })).toBeVisible();
 });
 
+test("на узком экране всё левее стрелки раздела сворачивает его", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  const server = sidebar(page).getByRole("button", { name: "server", exact: true });
+  const entry = sidebar(page).getByRole("button", { name: /web-02/ });
+  await expect(entry).toBeVisible();
+  // В отступ слева от стрелки: раздел свернулся, экран раздела не открылся.
+  await server.click({ position: { x: 4, y: 10 } });
+  await expect(entry).toBeHidden();
+  await expect(page.getByRole("heading", { name: "server" })).toHaveCount(0);
+  await server.click({ position: { x: 4, y: 10 } });
+  await expect(entry).toBeVisible();
+  // По названию — открывается раздел.
+  await server.getByText("server").click();
+  await expect(page.getByRole("heading", { name: "server" })).toBeVisible();
+});
+
+test("на узком экране скрытое избранное остаётся скрытым после перезапуска", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const open = async () => {
+    await page.goto("/");
+    await page.getByLabel("Мастер-пароль").fill("password1");
+    await page.getByRole("button", { name: "Разблокировать" }).click();
+  };
+  await open();
+  const head = page.getByRole("navigation", { name: "Избранное" }).getByRole("button", { name: "Избранное" });
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await open();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await head.click();
+  await open();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+});
+
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 480 });
   await page.goto("/");
