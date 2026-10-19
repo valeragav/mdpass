@@ -890,6 +890,18 @@ test("Яндекс Диск подключается токеном, и хран
   await expect(page.getByLabel("OAuth-токен")).toBeVisible();
 });
 
+test("на узком экране текст и поля диалога во всю ширину, вровень с кнопками", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Создать новое хранилище" }).click();
+  await page.getByRole("button", { name: "Открыть из облака" }).click();
+  const connect = page.getByRole("dialog", { name: "Подключить облако" });
+  const field = (await connect.getByLabel("OAuth-токен").boundingBox())!;
+  const cancel = (await connect.getByRole("button", { name: "Отмена" }).boundingBox())!;
+  expect(field.x).toBe(cancel.x);
+  expect(field.width).toBe(cancel.width);
+});
+
 test("на новом компьютере хранилище открывается из облака", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Создать новое хранилище" }).click();

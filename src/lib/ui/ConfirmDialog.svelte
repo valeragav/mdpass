@@ -131,5 +131,26 @@
       flex-direction: column-reverse;
       align-items: stretch;
     }
+
+    /* Иконка — только у заголовка, текст и поля под ними во всю ширину окна,
+       вровень с кнопками. */
+    .head {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      gap: 12px 10px;
+    }
+
+    .head :global(svg) {
+      margin-top: 0;
+    }
+
+    .text {
+      display: contents;
+    }
+
+    .body {
+      grid-column: 1 / -1;
+    }
   }
 </style>
