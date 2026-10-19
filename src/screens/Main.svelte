@@ -134,7 +134,7 @@
   <!-- Телефон: запись на весь экран, сверху «назад» и кнопки записи. -->
   <div class="pane">
     <div class="bar">
-      <IconButton icon="back" label="Назад к записям" onclick={closeDetail} />
+      <IconButton icon="back" label="Назад к записям" back onclick={closeDetail} />
       <span class="spacer"></span>
       {#if selected && !vault.selectedSection}
         <IconButton

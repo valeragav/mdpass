@@ -2,10 +2,12 @@
   import type { EntryView } from "../../lib/api";
   import { fieldCursor, onFieldKey, type CursorItem } from "../../lib/fields";
   import { keyNav } from "../../lib/keys.svelte";
+  import { layout as screen } from "../../lib/layout.svelte";
   import { plural } from "../../lib/text";
   import { vault } from "../../lib/vault.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
   import FieldRow from "./FieldRow.svelte";
+  import Crumb from "./Crumb.svelte";
 
   interface Props {
     /// Выбранный раздел.
@@ -42,17 +44,19 @@
     vault.selectedSection = null;
   }
 
-  // Порядок строк для стрелок: подразделы, потом у каждой записи название и поля.
+  // Порядок строк для стрелок: у каждой записи название и поля, потом подразделы.
   // Номер первой строки каждой записи — её название.
   let layout = $derived.by(() => {
-    const order: CursorItem[] = subsections.map(({ name }) => ({ open: () => openSection(name) }));
+    const order: CursorItem[] = [];
     const starts = new Map<number, number>();
     for (const entry of entries) {
       starts.set(entry.id, order.length);
       order.push({ open: () => openEntry(entry) });
       entry.fields.forEach((_, index) => order.push({ entry, index }));
     }
-    return { order, starts };
+    const subStart = order.length;
+    for (const { name } of subsections) order.push({ open: () => openSection(name) });
+    return { order, starts, subStart };
   });
   let cursor = $derived(fieldCursor(layout.order.length));
 
@@ -63,38 +67,13 @@
 
 <main bind:this={root}>
   <div class="head">
-    <div class="crumb mono">{path.slice(0, -1).join(" / ")}</div>
+    <!-- На телефоне пустой путь не занимает строку: место нужнее под записи. -->
+    {#if path.length > 1 || !screen.narrow}<Crumb path={path.slice(0, -1)} />{/if}
     <h1>{path.at(-1)}</h1>
-    <p class="count">
-      {entries.length}
-      {plural(entries.length, ["запись", "записи", "записей"])} в разделе{subsections.length > 0
-        ? ` · ${subsections.length} ${plural(subsections.length, ["подраздел", "подраздела", "подразделов"])}`
-        : ""}
-    </p>
   </div>
 
   <div class="content scroll">
     <div class="inner">
-      {#if subsections.length > 0}
-        <nav class="subs" aria-label="Подразделы">
-          {#each subsections as sub, pos (sub.name)}
-            <button
-              type="button"
-              class="sub"
-              class:cursor={cursor === pos}
-              data-cursor={pos}
-              onclick={() => {
-                openSection(sub.name);
-                keyNav.zone = "list";
-              }}
-            >
-              <span class="chevron" aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
-              <span class="sub-name mono">{sub.name}</span>
-              <span class="sub-count">{sub.count} {plural(sub.count, ["запись", "записи", "записей"])}</span>
-            </button>
-          {/each}
-        </nav>
-      {/if}
       {#if entries.length === 0}
         <p class="hint">Прямо в этом разделе записей нет{subsections.length > 0 ? ", только подразделы" : ""}</p>
       {/if}
@@ -127,6 +106,26 @@
           {/if}
         </section>
       {/each}
+      {#if subsections.length > 0}
+        <nav class="subs" aria-label="Подразделы">
+          {#each subsections as sub, pos (sub.name)}
+            <button
+              type="button"
+              class="sub"
+              class:cursor={cursor === layout.subStart + pos}
+              data-cursor={layout.subStart + pos}
+              onclick={() => {
+                openSection(sub.name);
+                keyNav.zone = "list";
+              }}
+            >
+              <span class="chevron" aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
+              <span class="sub-name mono">{sub.name}</span>
+              <span class="sub-count">{sub.count} {plural(sub.count, ["запись", "записи", "записей"])}</span>
+            </button>
+          {/each}
+        </nav>
+      {/if}
     </div>
   </div>
 </main>
@@ -146,22 +145,11 @@
     gap: 8px;
   }
 
-  .crumb {
-    min-height: 17px;
-    font-size: 12px;
-    color: var(--text-subtle);
-  }
-
   h1 {
     font-size: 26px;
     font-weight: 600;
     letter-spacing: -0.01em;
     overflow-wrap: anywhere;
-  }
-
-  .count {
-    font-size: 13px;
-    color: var(--text-muted);
   }
 
   .subs {
@@ -284,5 +272,20 @@
   .hint {
     font-size: 12px;
     color: var(--text-subtle);
+  }
+
+  /* Телефон: поля и отступ сверху как у карточки записи. */
+  @media (max-width: 640px) {
+    .head {
+      padding: 16px 16px 0;
+    }
+
+    h1 {
+      font-size: 24px;
+    }
+
+    .content {
+      padding: 16px 16px 32px;
+    }
   }
 </style>

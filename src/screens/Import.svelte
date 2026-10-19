@@ -219,7 +219,7 @@
   <div class="bar">
     <span class="note">Исходный файл не изменится. После импорта лучше удалить его: пароли в нём лежат открытым текстом.</span>
     <div class="actions">
-      <Button onclick={() => go("main")}>{fromWelcome ? "Пропустить" : "Назад"}</Button>
+      <Button back onclick={() => go("main")}>{fromWelcome ? "Пропустить" : "Назад"}</Button>
       <Button variant="primary" icon="import" disabled={!preview || preview.entries === 0 || busy} onclick={runImport}>
         {busy
           ? "Импортируем…"

@@ -1,6 +1,27 @@
 <script lang="ts" module>
   // Раскрыт ли длинный список избранного.
   let favoritesOpen = $state(false);
+  // Телефон: избранное свёрнуто до заголовка, чтобы осталось место под разделы.
+  // Запоминается на этом устройстве. Хранилище браузера может быть недоступно.
+  const HIDDEN_KEY = "mdpass.favoritesHidden";
+  let favoritesHidden = $state(readHidden());
+
+  function readHidden(): boolean {
+    try {
+      return localStorage.getItem(HIDDEN_KEY) === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function setHidden(hidden: boolean) {
+    favoritesHidden = hidden;
+    try {
+      localStorage.setItem(HIDDEN_KEY, hidden ? "1" : "0");
+    } catch {
+      // Не запомнится до перезапуска, сворачивание всё равно работает.
+    }
+  }
 </script>
 
 <script lang="ts">
@@ -415,13 +436,16 @@
     | { kind: "before-entry"; entry: EntryView; rowKey: string }
     | { kind: "after-entry"; entry: EntryView; rowKey: string }
     | { kind: "before-section"; path: string[]; rowKey: string }
-    | { kind: "root"; rowKey: "root" };
+    | { kind: "root"; rowKey: string };
 
   const DRAG_THRESHOLD = 6;
+  /// Пальцем тянут после долгого нажатия: простое движение пальца — это прокрутка.
+  const LONG_PRESS = 400;
 
   let list: HTMLElement | undefined = $state();
   let aside: HTMLElement | undefined = $state();
-  let pending: { dragged: Dragged; label: string; x: number; y: number } | null = null;
+  let pending: { dragged: Dragged; label: string; x: number; y: number; touch: boolean } | null = null;
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
   let dragging = $state<{ dragged: Dragged; label: string } | null>(null);
   let pointer = $state({ x: 0, y: 0 });
   let target = $state<Target | null>(null);
@@ -430,18 +454,34 @@
 
   function startPress(event: PointerEvent, dragged: Dragged, label: string) {
     if (event.button !== 0) return;
-    pending = { dragged, label, x: event.clientX, y: event.clientY };
+    const touch = event.pointerType === "touch";
+    pending = { dragged, label, x: event.clientX, y: event.clientY, touch };
+    pointer = { x: event.clientX, y: event.clientY };
+    if (touch) pressTimer = setTimeout(beginDrag, LONG_PRESS);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
     window.addEventListener("pointercancel", cancelDrag, { once: true });
+    // Пока тянут пальцем, страница не прокручивается. Обработчик pointermove этого не умеет.
+    window.addEventListener("touchmove", holdScroll, { passive: false });
+  }
+
+  function holdScroll(event: TouchEvent) {
+    if (dragging) event.preventDefault();
+  }
+
+  function beginDrag() {
+    if (!pending) return;
+    dragging = { dragged: pending.dragged, label: pending.label };
+    scrollTimer = setInterval(autoScroll, 16);
   }
 
   function onMove(event: PointerEvent) {
     pointer = { x: event.clientX, y: event.clientY };
     if (!dragging && pending) {
       if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < DRAG_THRESHOLD) return;
-      dragging = { dragged: pending.dragged, label: pending.label };
-      scrollTimer = setInterval(autoScroll, 16);
+      // Палец сдвинулся раньше долгого нажатия: это прокрутка, не перетаскивание.
+      if (pending.touch) return cancelDrag();
+      beginDrag();
     }
     if (dragging) {
       event.preventDefault();
@@ -478,12 +518,15 @@
         : { kind: "after-favorite", entry: favorite, rowKey };
     }
 
-    if (el.dataset.drop === "root") return { kind: "root", rowKey: "root" };
     const row = rows.find((r) => r.key === el.dataset.drop);
     if (!row) return null;
 
     if (dragged.kind === "entry") {
-      if (row.kind === "group") return { kind: "into", path: row.path, rowKey: row.key };
+      if (row.kind === "group") {
+        // Над разделом верхнего уровня — запись уходит из разделов на верхний уровень.
+        if (row.path.length === 1 && offset < 0.3) return { kind: "root", rowKey: row.key };
+        return { kind: "into", path: row.path, rowKey: row.key };
+      }
       if (row.entry.id === dragged.entry.id) return null;
       return offset < 0.5
         ? { kind: "before-entry", entry: row.entry, rowKey: row.key }
@@ -513,6 +556,8 @@
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", cancelDrag);
+    window.removeEventListener("touchmove", holdScroll);
+    clearTimeout(pressTimer);
     clearInterval(scrollTimer);
     pending = null;
     dragging = null;
@@ -551,8 +596,7 @@
         if (where.kind === "into") {
           await api.moveSection(path, where.path, null);
           collapsed.delete(pathKey(where.path));
-        } else if (where.kind === "root") await api.moveSection(path, [], null);
-        else if (where.kind === "before-section") await api.moveSection(path, where.path.slice(0, -1), where.path);
+        } else if (where.kind === "before-section") await api.moveSection(path, where.path.slice(0, -1), where.path);
         else return;
       }
       await loadEntries();
@@ -564,7 +608,7 @@
 
   function dropClass(rowKey: string): string {
     if (!target || target.rowKey !== rowKey) return "";
-    if (target.kind === "before-entry" || target.kind === "before-section" || target.kind === "before-favorite") {
+    if (["before-entry", "before-section", "before-favorite", "root"].includes(target.kind)) {
       return "drop-before";
     }
     if (target.kind === "after-entry" || target.kind === "after-favorite") return "drop-after";
@@ -583,6 +627,10 @@
 <svelte:window onkeydown={onKey} />
 
 <aside
+  oncontextmenu={(e) => {
+    // Долгое нажатие пальцем — это перетаскивание, а не меню.
+    if (dragging || pending?.touch) e.preventDefault();
+  }}
   class:dragging={dragging !== null}
   class:resizing
   class:narrow={layout.narrow}
@@ -647,20 +695,21 @@
 
   {#if favorites.length > 0}
     <nav class="favorites" aria-label="Избранное">
-      {#if favoritesLong}
+      {#if favoritesLong || layout.narrow}
         <button
           type="button"
           class="fav-head mono"
           class:on={cursorIn === "fav-head"}
           data-nav="fav-head"
-          aria-expanded={favoritesOpen}
+          aria-expanded={layout.narrow ? !favoritesHidden : favoritesOpen}
           onclick={() => {
             keyNav.zone = "list";
             cursorIn = "fav-head";
-            favoritesOpen = !favoritesOpen;
+            if (layout.narrow) setHidden(!favoritesHidden);
+            else favoritesOpen = !favoritesOpen;
           }}
         >
-          <span class="chevron" class:open={favoritesOpen} aria-hidden="true"
+          <span class="chevron" class:open={layout.narrow ? !favoritesHidden : favoritesOpen} aria-hidden="true"
             ><Icon name="chevron" size={14} stroke={2} /></span
           >
           <Icon name="star" size={12} stroke={2} fill="currentColor" />
@@ -669,30 +718,32 @@
       {:else}
         <div class="fav-head mono"><Icon name="star" size={12} stroke={2} fill="currentColor" />Избранное</div>
       {/if}
-      <div class="fav-scroll scroll" class:open={favoritesOpen} bind:this={favBox}>
-        {#each favorites as entry (entry.id)}
-          <button
-            type="button"
-            class="entry fav {dropClass(`f:${entry.id}`)}"
-            class:on={favCursor && entry.id === vault.selectedId}
-            class:faded={dragging?.dragged.kind === "favorite" && dragging.dragged.entry.id === entry.id}
-            data-nav="f:{entry.id}"
-            data-drop="f:{entry.id}"
-            onpointerdown={(e) => startPress(e, { kind: "favorite", entry }, entry.title)}
-            onclick={() => {
-              if (suppressClick) return;
-              vault.selectedId = entry.id;
-              vault.selectedSection = null;
-              openDetail();
-              cursorIn = "fav";
-              keyNav.zone = "list";
-            }}
-          >
-            <span class="title">{entry.title}</span>
-            <span class="hint mono">{entry.path.join(" / ")}</span>
-          </button>
-        {/each}
-      </div>
+      {#if !(layout.narrow && favoritesHidden)}
+        <div class="fav-scroll scroll" class:open={favoritesOpen && !layout.narrow} bind:this={favBox}>
+          {#each favorites as entry (entry.id)}
+            <button
+              type="button"
+              class="entry fav {dropClass(`f:${entry.id}`)}"
+              class:on={favCursor && entry.id === vault.selectedId}
+              class:faded={dragging?.dragged.kind === "favorite" && dragging.dragged.entry.id === entry.id}
+              data-nav="f:{entry.id}"
+              data-drop="f:{entry.id}"
+              onpointerdown={(e) => startPress(e, { kind: "favorite", entry }, entry.title)}
+              onclick={() => {
+                if (suppressClick) return;
+                vault.selectedId = entry.id;
+                vault.selectedSection = null;
+                openDetail();
+                cursorIn = "fav";
+                keyNav.zone = "list";
+              }}
+            >
+              <span class="title">{entry.title}</span>
+              <span class="hint mono">{entry.path.join(" / ")}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
     </nav>
   {/if}
   <div class="list scroll" bind:this={list}>
@@ -743,12 +794,22 @@
               keyNav.zone = "list";
               cursorIn = "list";
               // Первый щелчок открывает справа записи раздела, следующий сворачивает его.
-              // Стрелка слева сворачивает сразу.
-              const onChevron = (e.target as HTMLElement).closest(".chevron") !== null;
+              // Стрелка слева сворачивает сразу. Её зона — всё левее стрелки и немного
+              // правее: пальцем в значок 14px не попасть. У Enter нет координат (detail 0).
+              const chevron = (e.currentTarget as HTMLElement).querySelector(".chevron")!;
+              const onChevron = e.detail > 0 && e.clientX <= chevron.getBoundingClientRect().right + 8;
+              // Телефон: стрелка сворачивает, название открывает раздел отдельным экраном.
+              if (layout.narrow) {
+                if (onChevron) toggle(row);
+                else {
+                  vault.selectedSection = row.path;
+                  openDetail();
+                }
+                return;
+              }
               if (onChevron || isCurrent(row)) toggle(row);
               else if (!open) toggle(row);
-              // На узком экране раздел только сворачивается: записи видны в самом списке.
-              if (!layout.narrow) vault.selectedSection = row.path;
+              vault.selectedSection = row.path;
             }}
           >
             <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
@@ -779,9 +840,6 @@
           </button>
         {/if}
       {/each}
-      {#if dragging && dragging.dragged.kind !== "favorite"}
-        <div class="root-drop mono {dropClass('root')}" data-drop="root">Перетащите сюда, чтобы перенести на верхний уровень</div>
-      {/if}
     </nav>
   </div>
 
@@ -883,6 +941,11 @@
     /* две строки чипов */
     max-height: 62px;
     overflow: hidden;
+  }
+
+  /* Телефон: места мало, видна одна строка чипов, остальные — по «Все теги». */
+  aside.narrow .tags:not(.open) {
+    max-height: 28px;
   }
 
   .tags.open {
@@ -1140,16 +1203,6 @@
     flex: none;
     font-size: 11px;
     color: var(--text-subtle);
-  }
-
-  .root-drop {
-    margin-top: 12px;
-    padding: 14px 12px;
-    border: 1px dashed var(--line-dashed);
-    border-radius: 8px;
-    font-size: 12px;
-    color: var(--text-subtle);
-    text-align: center;
   }
 
   .ghost {

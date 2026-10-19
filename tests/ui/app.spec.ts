@@ -78,7 +78,7 @@ test("щелчок по разделу показывает все его зап
   await unlock(page);
   await sidebar(page).getByRole("button", { name: "server", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "server" })).toBeVisible();
-  await expect(page.getByText("3 записи в разделе")).toBeVisible();
+  await expect(page.getByText(/в разделе/)).toHaveCount(0);
   for (const title of ["web-01 (прод)", "web-02 (тест)", "БД каталога"]) {
     await expect(page.getByRole("region", { name: title })).toBeVisible();
   }
@@ -332,7 +332,11 @@ test("новая запись подставляет выбранный разд
 
   await expect(page.getByRole("status")).toContainText("Запись добавлена");
   await expect(page.getByRole("heading", { name: "gamma" })).toBeVisible();
-  await expect(page.getByText("work / site")).toBeVisible();
+  const crumb = page.getByRole("navigation", { name: "Путь" });
+  await expect(crumb).toHaveText("work / site");
+  // Щелчок по части пути открывает этот раздел.
+  await crumb.getByRole("button", { name: "work" }).click();
+  await expect(page.getByRole("heading", { name: "work" })).toBeVisible();
 });
 
 test("в редакторе под тегами подсказываются существующие", async ({ page }) => {
@@ -542,6 +546,84 @@ test("запись перетаскивается в другой раздел",
   await entry.dragTo(target);
   await expect(page.getByRole("status")).toContainText("Перемещено");
   await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(0);
+});
+
+test("запись и раздел, перенесённые внутрь раздела, не раздваивают его", async ({ page }) => {
+  await unlock(page);
+  const work = sidebar(page).getByRole("button", { name: "work", exact: true });
+  const box = (await work.boundingBox())!;
+  // Запись в work, где своих записей нет, только подразделы.
+  await sidebar(page)
+    .getByRole("button", { name: /example\.test/ })
+    .dragTo(work, { targetPosition: { x: box.width / 2, y: box.height - 4 } });
+  await expect(page.getByRole("status")).toContainText("Перемещено");
+  await expect(work).toHaveCount(1);
+
+  // В разделе сначала его записи, под ними подразделы. Стрелки идут в том же порядке.
+  await work.click();
+  const card = page.getByRole("region", { name: "example.test" });
+  const subs = page.getByRole("navigation", { name: "Подразделы" });
+  expect((await card.boundingBox())!.y).toBeLessThan((await subs.boundingBox())!.y);
+  await page.keyboard.press("ArrowRight");
+  await expect(card.getByRole("button", { name: "example.test" })).toHaveClass(/cursor/);
+  await work.click();
+
+  // Раздел my внутрь work: встаёт последним подразделом, work по-прежнему один.
+  const box2 = (await work.boundingBox())!;
+  await sidebar(page)
+    .getByRole("button", { name: "my", exact: true })
+    .dragTo(work, { targetPosition: { x: box2.width / 2, y: box2.height - 4 } });
+  await expect(page.getByRole("status").last()).toContainText("Перемещено");
+  await expect(work).toHaveCount(1);
+  await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(1);
+});
+
+test("запись над разделом верхнего уровня уходит на верхний уровень", async ({ page }) => {
+  await unlock(page);
+  const entry = sidebar(page).getByRole("button", { name: /почта/ });
+  const work = sidebar(page).getByRole("button", { name: "work", exact: true });
+  const box = (await work.boundingBox())!;
+  await entry.hover();
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + 10, { steps: 5 });
+  await page.mouse.move(box.x + box.width / 2, box.y + 3, { steps: 2 });
+  await page.mouse.up();
+  await expect(page.getByRole("status")).toContainText("Перемещено");
+  // Раздел my опустел и исчез, запись стоит над разделами.
+  await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(0);
+  expect((await entry.boundingBox())!.y).toBeLessThan((await work.boundingBox())!.y);
+  await expect(page.getByText("Перетащите сюда")).toHaveCount(0);
+});
+
+test("пальцем запись перетаскивается после долгого нажатия, а простое движение — прокрутка", async ({ page }) => {
+  await unlock(page);
+  const entry = sidebar(page).getByRole("button", { name: /почта/ });
+  const target = sidebar(page).getByRole("button", { name: "site", exact: true });
+  const from = (await entry.boundingBox())!;
+  const to = (await target.boundingBox())!;
+  const at = (box: { x: number; y: number; width: number; height: number }) => ({
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    bubbles: true,
+    clientX: box.x + box.width / 2,
+    clientY: box.y + box.height / 2,
+  });
+  const hint = page.locator("aside.dragging");
+
+  // Сразу повели пальцем — перетаскивание не начинается.
+  await entry.dispatchEvent("pointerdown", at(from));
+  await entry.dispatchEvent("pointermove", at(to));
+  await expect(hint).toHaveCount(0);
+  await entry.dispatchEvent("pointerup", at(to));
+
+  // Подержали — тянется.
+  await entry.dispatchEvent("pointerdown", at(from));
+  await page.waitForTimeout(500);
+  await expect(hint).toBeVisible();
+  await target.dispatchEvent("pointermove", at(to));
+  await target.dispatchEvent("pointerup", at(to));
+  await expect(page.getByRole("status")).toContainText("Перемещено");
 });
 
 test("горячие клавиши: Ctrl+N открывает новую запись, Esc возвращает", async ({ page }) => {
@@ -808,6 +890,18 @@ test("Яндекс Диск подключается токеном, и хран
   await expect(page.getByLabel("OAuth-токен")).toBeVisible();
 });
 
+test("на узком экране текст и поля диалога во всю ширину, вровень с кнопками", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Создать новое хранилище" }).click();
+  await page.getByRole("button", { name: "Открыть из облака" }).click();
+  const connect = page.getByRole("dialog", { name: "Подключить облако" });
+  const field = (await connect.getByLabel("OAuth-токен").boundingBox())!;
+  const cancel = (await connect.getByRole("button", { name: "Отмена" }).boundingBox())!;
+  expect(field.x).toBe(cancel.x);
+  expect(field.width).toBe(cancel.width);
+});
+
 test("на новом компьютере хранилище открывается из облака", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Создать новое хранилище" }).click();
@@ -852,6 +946,20 @@ test("на узком экране запись открывается отде�
   await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Новая запись" })).toHaveCount(0);
 
+  // Раздел в списке открывается отдельным экраном, как справа на компьютере.
+  await page.getByRole("button", { name: "Назад к записям" }).click();
+  await sidebar(page).getByRole("button", { name: "site", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "site" })).toBeVisible();
+  await expect(page.getByRole("button", { name: /example\.test/ })).toBeVisible();
+  await page.getByRole("button", { name: "Назад к записям" }).click();
+  await sidebar(page).getByRole("button", { name: /почта/ }).click();
+
+  // Путь над записью ведёт в раздел и на телефоне, из раздела можно вернуться в запись.
+  await page.getByRole("navigation", { name: "Путь" }).getByRole("button", { name: "my" }).click();
+  await expect(page.getByRole("heading", { name: "my" })).toBeVisible();
+  await page.getByRole("button", { name: "почта", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+
   await page.getByRole("button", { name: "Назад к записям" }).click();
   await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "почта" })).toHaveCount(0);
@@ -867,6 +975,181 @@ test("на узком экране запись открывается отде�
 
   await page.getByRole("button", { name: "Новая запись" }).click();
   await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
+});
+
+test("на узком экране системная кнопка «Назад» возвращает, а не закрывает приложение", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+  // На списке возвращаться некуда: лишней записи в истории нет, «Назад» закроет приложение.
+  await expect.poll(() => page.evaluate(() => history.state)).toBeNull();
+
+  // Запись → раздел по пути → «Назад» → список.
+  await sidebar(page).getByRole("button", { name: /почта/ }).click();
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => history.state)).toBeNull();
+
+  // Настройки: из раздела к списку разделов, потом к записям.
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Безопасность" }).click();
+  await expect(page.getByRole("heading", { name: "Безопасность" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Облако" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+
+  // В редакторе с правками «Назад» спрашивает, а второй «Назад» закрывает вопрос.
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("черновик");
+  await page.goBack();
+  const ask = page.getByRole("dialog");
+  await expect(ask).toBeVisible();
+  await page.goBack();
+  await expect(ask).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
+});
+
+test("на узком экране избранное сворачивается до заголовка", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  const head = favorites.getByRole("button", { name: "Избранное" });
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+  await expect(favorites.getByRole("button", { name: /почта/ })).toBeVisible();
+
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await expect(favorites.getByRole("button", { name: /почта/ })).toHaveCount(0);
+  // Сами записи остаются в разделах.
+  await expect(sidebar(page).getByRole("button", { name: /почта/ })).toBeVisible();
+
+  await head.click();
+  await expect(favorites.getByRole("button", { name: /почта/ })).toBeVisible();
+});
+
+test("на узком экране видна одна строка тегов, остальные — по «Все теги»", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("много тегов");
+  await page.getByLabel("Теги").fill(Array.from({ length: 15 }, (_, i) => `tag-${i + 1}`).join(", "));
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  await expect(page.getByRole("status")).toContainText("Запись добавлена");
+  if (await page.getByRole("button", { name: "Назад к записям" }).isVisible())
+    await page.getByRole("button", { name: "Назад к записям" }).click();
+
+  const tags = page.locator("aside .tags");
+  const chip = tags.locator(".chip").first();
+  // Высота области — одна строка чипов.
+  await expect.poll(async () => (await tags.boundingBox())!.height).toBe((await chip.boundingBox())!.height);
+  const more = page.getByRole("button", { name: /^Все теги \(\d+\)$/ });
+  await more.click();
+  await expect.poll(async () => (await tags.boundingBox())!.height).toBeGreaterThan(60);
+  await page.getByRole("button", { name: "Свернуть теги" }).click();
+  await expect(more).toBeVisible();
+});
+
+test("на низком экране форма создания хранилища прокручивается до самого верха", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Создать новое хранилище" }).click();
+  const create = page.getByRole("button", { name: "Создать хранилище" });
+  await expect(create).toBeVisible();
+  // Прокрутка в самый верх показывает начало формы, а не обрезанный текст.
+  const screen = page.locator(".screen");
+  await screen.evaluate((el) => (el.scrollTop = 0));
+  const top = (await page.locator(".screen > *").first().boundingBox())!;
+  expect(top.y).toBeGreaterThanOrEqual(0);
+  // А вниз — до кнопки.
+  await create.scrollIntoViewIfNeeded();
+  await expect(create).toBeInViewport();
+});
+
+test("на узком экране «Файл и копии» и резервные копии помещаются в ширину экрана", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Файл и копии" }).click();
+  const wide = () => page.evaluate(() => document.documentElement.scrollWidth);
+  // Длинный путь переносится, кнопки не уезжают за край.
+  await expect(page.getByRole("button", { name: "Переименовать…" })).toBeInViewport({ ratio: 1 });
+  expect(await wide()).toBeLessThanOrEqual(390);
+
+  // Копии: сначала список, копия — отдельным экраном, «Копии» возвращает к списку.
+  await page.getByRole("button", { name: "Открыть резервные копии" }).click();
+  const item = page.getByRole("button", { name: /12 окт., 11:42/ });
+  await expect(item).toBeVisible();
+  await expect(page.getByRole("button", { name: "Восстановить эту копию" })).toBeHidden();
+  await item.click();
+  await expect(page.getByRole("button", { name: "Восстановить эту копию" })).toBeVisible();
+  await expect(item).toBeHidden();
+  expect(await wide()).toBeLessThanOrEqual(390);
+  await page.getByRole("button", { name: "Копии" }).click();
+  await expect(item).toBeVisible();
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByRole("button", { name: "Файл и копии" })).toBeVisible();
+});
+
+test("на узком экране всё левее стрелки раздела сворачивает его", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  const server = sidebar(page).getByRole("button", { name: "server", exact: true });
+  const entry = sidebar(page).getByRole("button", { name: /web-02/ });
+  await expect(entry).toBeVisible();
+  // В отступ слева от стрелки: раздел свернулся, экран раздела не открылся.
+  await server.click({ position: { x: 4, y: 10 } });
+  await expect(entry).toBeHidden();
+  await expect(page.getByRole("heading", { name: "server" })).toHaveCount(0);
+  await server.click({ position: { x: 4, y: 10 } });
+  await expect(entry).toBeVisible();
+  // По названию — открывается раздел.
+  await server.getByText("server").click();
+  await expect(page.getByRole("heading", { name: "server" })).toBeVisible();
+});
+
+test("на узком экране у раздела узкие поля, а пустой путь не занимает строку", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await sidebar(page).getByRole("button", { name: "work", exact: true }).getByText("work").click();
+  const title = page.getByRole("heading", { name: "work" });
+  await expect(title).toBeVisible();
+  expect((await title.boundingBox())!.x).toBeLessThanOrEqual(16);
+  await expect(page.getByRole("navigation", { name: "Путь" })).toHaveCount(0);
+  // У подраздела путь есть.
+  await page.getByRole("button", { name: /server/ }).click();
+  await expect(page.getByRole("navigation", { name: "Путь" })).toHaveText("work");
+});
+
+test("на узком экране скрытое избранное остаётся скрытым после перезапуска", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const open = async () => {
+    await page.goto("/");
+    await page.getByLabel("Мастер-пароль").fill("password1");
+    await page.getByRole("button", { name: "Разблокировать" }).click();
+  };
+  await open();
+  const head = page.getByRole("navigation", { name: "Избранное" }).getByRole("button", { name: "Избранное" });
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await open();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await head.click();
+  await open();
+  await expect(head).toHaveAttribute("aria-expanded", "true");
 });
 
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {

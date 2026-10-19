@@ -300,7 +300,7 @@
 
 <div class="screen">
   <header>
-    <Button variant="ghost" size="sm" icon="back" onclick={leave}>Назад</Button>
+    <Button variant="ghost" size="sm" icon="back" back onclick={leave}>Назад</Button>
     <Logo size="sm" />
     <div class="file mono">
       <Icon name="lock" size={14} />

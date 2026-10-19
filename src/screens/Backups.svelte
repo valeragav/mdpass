@@ -9,6 +9,7 @@
     type BackupView,
     type FieldChange,
   } from "../lib/api";
+  import { layout } from "../lib/layout.svelte";
   import { app, go } from "../lib/nav.svelte";
   import { showToast } from "../lib/toast.svelte";
   import Button from "../lib/ui/Button.svelte";
@@ -55,6 +56,15 @@
   let busy = $state(false);
 
   let selected = $derived(backups.find((b) => b.id === selectedId) ?? null);
+  /// Телефон: сначала список копий, копия открывается отдельным экраном.
+  let opened = $state(false);
+  let listing = $derived(layout.narrow && !opened);
+
+  /// «Назад»: на телефоне из копии — к списку, иначе — туда, откуда пришли.
+  function back() {
+    if (layout.narrow && opened) opened = false;
+    else go(app.backupsFrom);
+  }
 
   onMount(async () => {
     try {
@@ -209,14 +219,14 @@
 
 <div class="screen">
   <header>
-    <Button variant="ghost" size="sm" icon="back" onclick={() => go(app.backupsFrom)}>
-      {app.backupsFrom === "settings" ? "Настройки" : "Назад"}
+    <Button variant="ghost" size="sm" icon="back" back onclick={back}>
+      {layout.narrow && opened ? "Копии" : app.backupsFrom === "settings" ? "Настройки" : "Назад"}
     </Button>
     <Logo size="sm" />
     <span class="spacer"></span>
   </header>
 
-  <div class="body">
+  <div class="body" class:listing class:opened={layout.narrow && opened}>
     <div class="list-pane">
       <div class="list-head">
         <h1>Резервные копии</h1>
@@ -234,7 +244,10 @@
             class="item"
             class:on={backup.id === selectedId}
             aria-pressed={backup.id === selectedId}
-            onclick={() => select(backup.id)}
+            onclick={() => {
+              opened = true;
+              if (backup.id !== selectedId) select(backup.id);
+            }}
           >
             <span class="date mono">{formatDate(backup.createdMs)}</span>
             <span>{REASONS[backup.kind]}</span>
@@ -627,6 +640,47 @@
   @media (max-width: 900px) {
     .list-pane {
       width: 300px;
+    }
+  }
+
+  /* Телефон: список и копия по очереди, каждый на весь экран. */
+  @media (max-width: 640px) {
+    .list-pane {
+      flex: 1;
+      width: auto;
+      border-right: 0;
+    }
+
+    .body.opened .list-pane,
+    .body.listing .details {
+      display: none;
+    }
+
+    .list-head {
+      padding: 20px 16px 12px;
+    }
+
+    .details {
+      padding: 20px 16px 32px;
+    }
+
+    .change {
+      gap: 10px;
+      padding: 12px;
+    }
+
+    /* Текст изменения во всю ширину, «Вернуть запись» под ним. */
+    .change-head {
+      flex-direction: column;
+    }
+
+    .old {
+      grid-template-columns: 72px minmax(0, 1fr) auto;
+      gap: 8px;
+    }
+
+    .old-key {
+      overflow-wrap: anywhere;
     }
   }
 </style>

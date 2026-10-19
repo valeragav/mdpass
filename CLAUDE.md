@@ -56,8 +56,9 @@ npm run test:ui                                        # Playwright, сам по
 
 - Комментарии в коде, документация, CHANGELOG и тексты интерфейса — на русском. Пишутся
   простыми короткими фразами, с точки зрения пользователя.
-- Сообщения коммитов — на английском, одна строка без префиксов, по сути изменения:
-  `Favorites scroll on their own: 5 rows visible, 10 when expanded`.
+- Сообщения коммитов — на английском, одна строка в формате Conventional Commits
+  (`<type>(<scope>): <описание>`), по сути изменения:
+  `feat(ui): make breadcrumb parts open their section on click`.
 - Rust: `rustfmt.toml` (ширина 120), edition 2024. Clippy без предупреждений.
 
 ## Выпуск

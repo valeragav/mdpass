@@ -464,7 +464,10 @@ mockIPC(
       let at = n.beforeId === null ? -1 : ENTRIES.findIndex((e) => e.id === n.beforeId);
       if (at < 0) {
         const same = ENTRIES.map((e, k) => (e.path.join("/") === n.path.join("/") ? k : -1)).filter((k) => k >= 0);
-        at = same.length ? same[same.length - 1] + 1 : ENTRIES.length;
+        // Свои записи раздела в файле стоят сразу под заголовком, до подразделов.
+        // У верхнего уровня это начало файла, до первого заголовка.
+        const sub = ENTRIES.findIndex((e) => n.path.every((part, k) => e.path[k] === part));
+        at = same.length ? same[same.length - 1] + 1 : sub >= 0 ? sub : ENTRIES.length;
       }
       ENTRIES.splice(at, 0, entry);
       return null;
@@ -477,7 +480,11 @@ mockIPC(
         ENTRIES.splice(ENTRIES.indexOf(e), 1);
         e.path = [...n.parent, ...e.path.slice(n.path.length - 1)];
       }
-      const at = n.before ? ENTRIES.findIndex((e) => n.before!.every((part, k) => e.path[k] === part)) : -1;
+      const under = (p: string[]) => (e: { path: string[] }) => p.every((part, k) => e.path[k] === part);
+      // Без «перед кем» раздел встаёт последним в родителе, а не в конце файла.
+      const at = n.before
+        ? ENTRIES.findIndex(under(n.before))
+        : ENTRIES.reduce((last, e, k) => (under(n.parent)(e) ? k + 1 : last), 0);
       ENTRIES.splice(at < 0 ? ENTRIES.length : at, 0, ...block);
       return null;
     }

@@ -197,10 +197,19 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
     gap: 24px;
     padding: 24px;
     overflow-y: auto;
+  }
+
+  /* По центру, пока помещается. Если экран ниже содержимого, оно начинается сверху
+     и прокручивается целиком: justify-content: center увёл бы верх за край. */
+  .screen > :global(:first-child) {
+    margin-top: auto;
+  }
+
+  .screen > :global(:last-child) {
+    margin-bottom: auto;
   }
 
   .card {
