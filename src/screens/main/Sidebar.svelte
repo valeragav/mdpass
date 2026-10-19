@@ -775,10 +775,18 @@
               // Первый щелчок открывает справа записи раздела, следующий сворачивает его.
               // Стрелка слева сворачивает сразу.
               const onChevron = (e.target as HTMLElement).closest(".chevron") !== null;
+              // Телефон: стрелка сворачивает, название открывает раздел отдельным экраном.
+              if (layout.narrow) {
+                if (onChevron) toggle(row);
+                else {
+                  vault.selectedSection = row.path;
+                  openDetail();
+                }
+                return;
+              }
               if (onChevron || isCurrent(row)) toggle(row);
               else if (!open) toggle(row);
-              // На узком экране раздел только сворачивается: записи видны в самом списке.
-              if (!layout.narrow) vault.selectedSection = row.path;
+              vault.selectedSection = row.path;
             }}
           >
             <span class="chevron" class:open aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
