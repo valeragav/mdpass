@@ -417,7 +417,7 @@
     | { kind: "before-entry"; entry: EntryView; rowKey: string }
     | { kind: "after-entry"; entry: EntryView; rowKey: string }
     | { kind: "before-section"; path: string[]; rowKey: string }
-    | { kind: "root"; rowKey: "root" };
+    | { kind: "root"; rowKey: string };
 
   const DRAG_THRESHOLD = 6;
   /// Пальцем тянут после долгого нажатия: простое движение пальца — это прокрутка.
@@ -499,12 +499,15 @@
         : { kind: "after-favorite", entry: favorite, rowKey };
     }
 
-    if (el.dataset.drop === "root") return { kind: "root", rowKey: "root" };
     const row = rows.find((r) => r.key === el.dataset.drop);
     if (!row) return null;
 
     if (dragged.kind === "entry") {
-      if (row.kind === "group") return { kind: "into", path: row.path, rowKey: row.key };
+      if (row.kind === "group") {
+        // Над разделом верхнего уровня — запись уходит из разделов на верхний уровень.
+        if (row.path.length === 1 && offset < 0.3) return { kind: "root", rowKey: row.key };
+        return { kind: "into", path: row.path, rowKey: row.key };
+      }
       if (row.entry.id === dragged.entry.id) return null;
       return offset < 0.5
         ? { kind: "before-entry", entry: row.entry, rowKey: row.key }
@@ -574,8 +577,7 @@
         if (where.kind === "into") {
           await api.moveSection(path, where.path, null);
           collapsed.delete(pathKey(where.path));
-        } else if (where.kind === "root") await api.moveSection(path, [], null);
-        else if (where.kind === "before-section") await api.moveSection(path, where.path.slice(0, -1), where.path);
+        } else if (where.kind === "before-section") await api.moveSection(path, where.path.slice(0, -1), where.path);
         else return;
       }
       await loadEntries();
@@ -587,7 +589,7 @@
 
   function dropClass(rowKey: string): string {
     if (!target || target.rowKey !== rowKey) return "";
-    if (target.kind === "before-entry" || target.kind === "before-section" || target.kind === "before-favorite") {
+    if (["before-entry", "before-section", "before-favorite", "root"].includes(target.kind)) {
       return "drop-before";
     }
     if (target.kind === "after-entry" || target.kind === "after-favorite") return "drop-after";
@@ -817,9 +819,6 @@
           </button>
         {/if}
       {/each}
-      {#if dragging && dragging.dragged.kind !== "favorite"}
-        <div class="root-drop mono {dropClass('root')}" data-drop="root">Перетащите сюда, чтобы перенести на верхний уровень</div>
-      {/if}
     </nav>
   </div>
 
@@ -1183,16 +1182,6 @@
     flex: none;
     font-size: 11px;
     color: var(--text-subtle);
-  }
-
-  .root-drop {
-    margin-top: 12px;
-    padding: 14px 12px;
-    border: 1px dashed var(--line-dashed);
-    border-radius: 8px;
-    font-size: 12px;
-    color: var(--text-subtle);
-    text-align: center;
   }
 
   .ghost {

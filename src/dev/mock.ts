@@ -464,7 +464,8 @@ mockIPC(
       let at = n.beforeId === null ? -1 : ENTRIES.findIndex((e) => e.id === n.beforeId);
       if (at < 0) {
         const same = ENTRIES.map((e, k) => (e.path.join("/") === n.path.join("/") ? k : -1)).filter((k) => k >= 0);
-        at = same.length ? same[same.length - 1] + 1 : ENTRIES.length;
+        // Записи верхнего уровня в файле стоят до первого заголовка.
+        at = same.length ? same[same.length - 1] + 1 : n.path.length === 0 ? 0 : ENTRIES.length;
       }
       ENTRIES.splice(at, 0, entry);
       return null;

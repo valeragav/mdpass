@@ -548,6 +548,23 @@ test("запись перетаскивается в другой раздел",
   await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(0);
 });
 
+test("запись над разделом верхнего уровня уходит на верхний уровень", async ({ page }) => {
+  await unlock(page);
+  const entry = sidebar(page).getByRole("button", { name: /почта/ });
+  const work = sidebar(page).getByRole("button", { name: "work", exact: true });
+  const box = (await work.boundingBox())!;
+  await entry.hover();
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + 10, { steps: 5 });
+  await page.mouse.move(box.x + box.width / 2, box.y + 3, { steps: 2 });
+  await page.mouse.up();
+  await expect(page.getByRole("status")).toContainText("Перемещено");
+  // Раздел my опустел и исчез, запись стоит над разделами.
+  await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(0);
+  expect((await entry.boundingBox())!.y).toBeLessThan((await work.boundingBox())!.y);
+  await expect(page.getByText("Перетащите сюда")).toHaveCount(0);
+});
+
 test("пальцем запись перетаскивается после долгого нажатия, а простое движение — прокрутка", async ({ page }) => {
   await unlock(page);
   const entry = sidebar(page).getByRole("button", { name: /почта/ });
@@ -562,7 +579,7 @@ test("пальцем запись перетаскивается после до
     clientX: box.x + box.width / 2,
     clientY: box.y + box.height / 2,
   });
-  const hint = page.getByText("Перетащите сюда");
+  const hint = page.locator("aside.dragging");
 
   // Сразу повели пальцем — перетаскивание не начинается.
   await entry.dispatchEvent("pointerdown", at(from));
