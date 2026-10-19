@@ -548,6 +548,37 @@ test("запись перетаскивается в другой раздел",
   await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(0);
 });
 
+test("пальцем запись перетаскивается после долгого нажатия, а простое движение — прокрутка", async ({ page }) => {
+  await unlock(page);
+  const entry = sidebar(page).getByRole("button", { name: /почта/ });
+  const target = sidebar(page).getByRole("button", { name: "site", exact: true });
+  const from = (await entry.boundingBox())!;
+  const to = (await target.boundingBox())!;
+  const at = (box: { x: number; y: number; width: number; height: number }) => ({
+    pointerType: "touch",
+    isPrimary: true,
+    button: 0,
+    bubbles: true,
+    clientX: box.x + box.width / 2,
+    clientY: box.y + box.height / 2,
+  });
+  const hint = page.getByText("Перетащите сюда");
+
+  // Сразу повели пальцем — перетаскивание не начинается.
+  await entry.dispatchEvent("pointerdown", at(from));
+  await entry.dispatchEvent("pointermove", at(to));
+  await expect(hint).toHaveCount(0);
+  await entry.dispatchEvent("pointerup", at(to));
+
+  // Подержали — тянется.
+  await entry.dispatchEvent("pointerdown", at(from));
+  await page.waitForTimeout(500);
+  await expect(hint).toBeVisible();
+  await target.dispatchEvent("pointermove", at(to));
+  await target.dispatchEvent("pointerup", at(to));
+  await expect(page.getByRole("status")).toContainText("Перемещено");
+});
+
 test("горячие клавиши: Ctrl+N открывает новую запись, Esc возвращает", async ({ page }) => {
   await unlock(page);
   await page.keyboard.press("Control+n");

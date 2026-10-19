@@ -420,10 +420,13 @@
     | { kind: "root"; rowKey: "root" };
 
   const DRAG_THRESHOLD = 6;
+  /// Пальцем тянут после долгого нажатия: простое движение пальца — это прокрутка.
+  const LONG_PRESS = 400;
 
   let list: HTMLElement | undefined = $state();
   let aside: HTMLElement | undefined = $state();
-  let pending: { dragged: Dragged; label: string; x: number; y: number } | null = null;
+  let pending: { dragged: Dragged; label: string; x: number; y: number; touch: boolean } | null = null;
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
   let dragging = $state<{ dragged: Dragged; label: string } | null>(null);
   let pointer = $state({ x: 0, y: 0 });
   let target = $state<Target | null>(null);
@@ -432,18 +435,34 @@
 
   function startPress(event: PointerEvent, dragged: Dragged, label: string) {
     if (event.button !== 0) return;
-    pending = { dragged, label, x: event.clientX, y: event.clientY };
+    const touch = event.pointerType === "touch";
+    pending = { dragged, label, x: event.clientX, y: event.clientY, touch };
+    pointer = { x: event.clientX, y: event.clientY };
+    if (touch) pressTimer = setTimeout(beginDrag, LONG_PRESS);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });
     window.addEventListener("pointercancel", cancelDrag, { once: true });
+    // Пока тянут пальцем, страница не прокручивается. Обработчик pointermove этого не умеет.
+    window.addEventListener("touchmove", holdScroll, { passive: false });
+  }
+
+  function holdScroll(event: TouchEvent) {
+    if (dragging) event.preventDefault();
+  }
+
+  function beginDrag() {
+    if (!pending) return;
+    dragging = { dragged: pending.dragged, label: pending.label };
+    scrollTimer = setInterval(autoScroll, 16);
   }
 
   function onMove(event: PointerEvent) {
     pointer = { x: event.clientX, y: event.clientY };
     if (!dragging && pending) {
       if (Math.hypot(event.clientX - pending.x, event.clientY - pending.y) < DRAG_THRESHOLD) return;
-      dragging = { dragged: pending.dragged, label: pending.label };
-      scrollTimer = setInterval(autoScroll, 16);
+      // Палец сдвинулся раньше долгого нажатия: это прокрутка, не перетаскивание.
+      if (pending.touch) return cancelDrag();
+      beginDrag();
     }
     if (dragging) {
       event.preventDefault();
@@ -515,6 +534,8 @@
     window.removeEventListener("pointermove", onMove);
     window.removeEventListener("pointerup", onUp);
     window.removeEventListener("pointercancel", cancelDrag);
+    window.removeEventListener("touchmove", holdScroll);
+    clearTimeout(pressTimer);
     clearInterval(scrollTimer);
     pending = null;
     dragging = null;
@@ -585,6 +606,10 @@
 <svelte:window onkeydown={onKey} />
 
 <aside
+  oncontextmenu={(e) => {
+    // Долгое нажатие пальцем — это перетаскивание, а не меню.
+    if (dragging || pending?.touch) e.preventDefault();
+  }}
   class:dragging={dragging !== null}
   class:resizing
   class:narrow={layout.narrow}
