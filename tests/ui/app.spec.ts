@@ -1045,6 +1045,22 @@ test("на узком экране видна одна строка тегов, 
   await expect(more).toBeVisible();
 });
 
+test("на низком экране форма создания хранилища прокручивается до самого верха", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Создать новое хранилище" }).click();
+  const create = page.getByRole("button", { name: "Создать хранилище" });
+  await expect(create).toBeVisible();
+  // Прокрутка в самый верх показывает начало формы, а не обрезанный текст.
+  const screen = page.locator(".screen");
+  await screen.evaluate((el) => (el.scrollTop = 0));
+  const top = (await page.locator(".screen > *").first().boundingBox())!;
+  expect(top.y).toBeGreaterThanOrEqual(0);
+  // А вниз — до кнопки.
+  await create.scrollIntoViewIfNeeded();
+  await expect(create).toBeInViewport();
+});
+
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 480 });
   await page.goto("/");
