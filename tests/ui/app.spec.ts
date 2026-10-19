@@ -1087,7 +1087,8 @@ test("на узком экране «Файл и копии» и резервн�
 
   // Копии: сначала список, копия — отдельным экраном, «Копии» возвращает к списку.
   await page.getByRole("button", { name: "Открыть резервные копии" }).click();
-  const item = page.getByRole("button", { name: /12 окт., 11:42/ });
+  // По причине, а не по времени: время показывается в часовом поясе машины.
+  const item = page.getByRole("button", { name: /Перед изменением записи/ });
   await expect(item).toBeVisible();
   await expect(page.getByRole("button", { name: "Восстановить эту копию" })).toBeHidden();
   await item.click();
