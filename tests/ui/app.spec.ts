@@ -78,7 +78,7 @@ test("щелчок по разделу показывает все его зап
   await unlock(page);
   await sidebar(page).getByRole("button", { name: "server", exact: true }).click();
   await expect(page.getByRole("heading", { level: 1, name: "server" })).toBeVisible();
-  await expect(page.getByText("3 записи в разделе")).toBeVisible();
+  await expect(page.getByText(/в разделе/)).toHaveCount(0);
   for (const title of ["web-01 (прод)", "web-02 (тест)", "БД каталога"]) {
     await expect(page.getByRole("region", { name: title })).toBeVisible();
   }

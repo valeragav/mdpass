@@ -70,12 +70,6 @@
     <!-- На телефоне пустой путь не занимает строку: место нужнее под записи. -->
     {#if path.length > 1 || !screen.narrow}<Crumb path={path.slice(0, -1)} />{/if}
     <h1>{path.at(-1)}</h1>
-    <p class="count">
-      {entries.length}
-      {plural(entries.length, ["запись", "записи", "записей"])} в разделе{subsections.length > 0
-        ? ` · ${subsections.length} ${plural(subsections.length, ["подраздел", "подраздела", "подразделов"])}`
-        : ""}
-    </p>
   </div>
 
   <div class="content scroll">
@@ -156,11 +150,6 @@
     font-weight: 600;
     letter-spacing: -0.01em;
     overflow-wrap: anywhere;
-  }
-
-  .count {
-    font-size: 13px;
-    color: var(--text-muted);
   }
 
   .subs {
