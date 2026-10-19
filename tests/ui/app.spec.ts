@@ -915,6 +915,26 @@ test("на узком экране системная кнопка «Назад�
   await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
 });
 
+test("на узком экране избранное сворачивается до заголовка", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  const favorites = page.getByRole("navigation", { name: "Избранное" });
+  const head = favorites.getByRole("button", { name: "Избранное" });
+  await expect(head).toHaveAttribute("aria-expanded", "true");
+  await expect(favorites.getByRole("button", { name: /почта/ })).toBeVisible();
+
+  await head.click();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await expect(favorites.getByRole("button", { name: /почта/ })).toHaveCount(0);
+  // Сами записи остаются в разделах.
+  await expect(sidebar(page).getByRole("button", { name: /почта/ })).toBeVisible();
+
+  await head.click();
+  await expect(favorites.getByRole("button", { name: /почта/ })).toBeVisible();
+});
+
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 480 });
   await page.goto("/");

@@ -1,6 +1,8 @@
 <script lang="ts" module>
   // Раскрыт ли длинный список избранного.
   let favoritesOpen = $state(false);
+  // Телефон: избранное свёрнуто до заголовка, чтобы осталось место под разделы.
+  let favoritesHidden = $state(false);
 </script>
 
 <script lang="ts">
@@ -647,20 +649,21 @@
 
   {#if favorites.length > 0}
     <nav class="favorites" aria-label="Избранное">
-      {#if favoritesLong}
+      {#if favoritesLong || layout.narrow}
         <button
           type="button"
           class="fav-head mono"
           class:on={cursorIn === "fav-head"}
           data-nav="fav-head"
-          aria-expanded={favoritesOpen}
+          aria-expanded={layout.narrow ? !favoritesHidden : favoritesOpen}
           onclick={() => {
             keyNav.zone = "list";
             cursorIn = "fav-head";
-            favoritesOpen = !favoritesOpen;
+            if (layout.narrow) favoritesHidden = !favoritesHidden;
+            else favoritesOpen = !favoritesOpen;
           }}
         >
-          <span class="chevron" class:open={favoritesOpen} aria-hidden="true"
+          <span class="chevron" class:open={layout.narrow ? !favoritesHidden : favoritesOpen} aria-hidden="true"
             ><Icon name="chevron" size={14} stroke={2} /></span
           >
           <Icon name="star" size={12} stroke={2} fill="currentColor" />
@@ -669,30 +672,32 @@
       {:else}
         <div class="fav-head mono"><Icon name="star" size={12} stroke={2} fill="currentColor" />Избранное</div>
       {/if}
-      <div class="fav-scroll scroll" class:open={favoritesOpen} bind:this={favBox}>
-        {#each favorites as entry (entry.id)}
-          <button
-            type="button"
-            class="entry fav {dropClass(`f:${entry.id}`)}"
-            class:on={favCursor && entry.id === vault.selectedId}
-            class:faded={dragging?.dragged.kind === "favorite" && dragging.dragged.entry.id === entry.id}
-            data-nav="f:{entry.id}"
-            data-drop="f:{entry.id}"
-            onpointerdown={(e) => startPress(e, { kind: "favorite", entry }, entry.title)}
-            onclick={() => {
-              if (suppressClick) return;
-              vault.selectedId = entry.id;
-              vault.selectedSection = null;
-              openDetail();
-              cursorIn = "fav";
-              keyNav.zone = "list";
-            }}
-          >
-            <span class="title">{entry.title}</span>
-            <span class="hint mono">{entry.path.join(" / ")}</span>
-          </button>
-        {/each}
-      </div>
+      {#if !(layout.narrow && favoritesHidden)}
+        <div class="fav-scroll scroll" class:open={favoritesOpen && !layout.narrow} bind:this={favBox}>
+          {#each favorites as entry (entry.id)}
+            <button
+              type="button"
+              class="entry fav {dropClass(`f:${entry.id}`)}"
+              class:on={favCursor && entry.id === vault.selectedId}
+              class:faded={dragging?.dragged.kind === "favorite" && dragging.dragged.entry.id === entry.id}
+              data-nav="f:{entry.id}"
+              data-drop="f:{entry.id}"
+              onpointerdown={(e) => startPress(e, { kind: "favorite", entry }, entry.title)}
+              onclick={() => {
+                if (suppressClick) return;
+                vault.selectedId = entry.id;
+                vault.selectedSection = null;
+                openDetail();
+                cursorIn = "fav";
+                keyNav.zone = "list";
+              }}
+            >
+              <span class="title">{entry.title}</span>
+              <span class="hint mono">{entry.path.join(" / ")}</span>
+            </button>
+          {/each}
+        </div>
+      {/if}
     </nav>
   {/if}
   <div class="list scroll" bind:this={list}>
