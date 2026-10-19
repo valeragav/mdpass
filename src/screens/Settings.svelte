@@ -14,6 +14,7 @@
 
 <script lang="ts">
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { IS_MOBILE } from "../lib/platform";
   import { api, errorText, type CloudProvider, type Settings } from "../lib/api";
   import { app, go } from "../lib/nav.svelte";
   import { showToast } from "../lib/toast.svelte";
@@ -234,7 +235,8 @@
             <div class="file-row">
               <div class="file mono"><Icon name="file" /><span>{app.vault?.display}</span></div>
               <Button size="sm" onclick={() => (renaming = true)}>Переименовать…</Button>
-              <Button size="sm" onclick={showInFolder}>Показать в папке</Button>
+              <!-- На телефоне показать папку нечем: плагин умеет это только на компьютере. -->
+              {#if !IS_MOBILE}<Button size="sm" onclick={showInFolder}>Показать в папке</Button>{/if}
             </div>
           </div>
           <div class="row">
@@ -261,7 +263,9 @@
             </div>
             <div class="file-row">
               <div class="file mono"><Icon name="file" /><span>{backupsDir ?? "…"}</span></div>
-              <Button size="sm" disabled={!backupsDir} onclick={showBackups}>Показать в папке</Button>
+              {#if !IS_MOBILE}
+                <Button size="sm" disabled={!backupsDir} onclick={showBackups}>Показать в папке</Button>
+              {/if}
             </div>
           </div>
           <div>
@@ -736,6 +740,20 @@
 
     .row:not(.stacked) > :first-child {
       flex: 1 1 200px;
+    }
+
+    /* Длинный путь — на своей строке и переносится, кнопки под ним. */
+    .file-row {
+      flex-wrap: wrap;
+    }
+
+    .file {
+      flex-basis: 100%;
+      height: auto;
+      min-height: 40px;
+      padding: 10px 14px;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
   }
 </style>

@@ -1073,6 +1073,33 @@ test("на низком экране форма создания хранили�
   await expect(create).toBeInViewport();
 });
 
+test("на узком экране «Файл и копии» и резервные копии помещаются в ширину экрана", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Файл и копии" }).click();
+  const wide = () => page.evaluate(() => document.documentElement.scrollWidth);
+  // Длинный путь переносится, кнопки не уезжают за край.
+  await expect(page.getByRole("button", { name: "Переименовать…" })).toBeInViewport({ ratio: 1 });
+  expect(await wide()).toBeLessThanOrEqual(390);
+
+  // Копии: сначала список, копия — отдельным экраном, «Копии» возвращает к списку.
+  await page.getByRole("button", { name: "Открыть резервные копии" }).click();
+  const item = page.getByRole("button", { name: /12 окт., 11:42/ });
+  await expect(item).toBeVisible();
+  await expect(page.getByRole("button", { name: "Восстановить эту копию" })).toBeHidden();
+  await item.click();
+  await expect(page.getByRole("button", { name: "Восстановить эту копию" })).toBeVisible();
+  await expect(item).toBeHidden();
+  expect(await wide()).toBeLessThanOrEqual(390);
+  await page.getByRole("button", { name: "Копии" }).click();
+  await expect(item).toBeVisible();
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await expect(page.getByRole("button", { name: "Файл и копии" })).toBeVisible();
+});
+
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 480 });
   await page.goto("/");
