@@ -548,6 +548,27 @@ test("запись перетаскивается в другой раздел",
   await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(0);
 });
 
+test("запись и раздел, перенесённые внутрь раздела, не раздваивают его", async ({ page }) => {
+  await unlock(page);
+  const work = sidebar(page).getByRole("button", { name: "work", exact: true });
+  const box = (await work.boundingBox())!;
+  // Запись в work, где своих записей нет, только подразделы.
+  await sidebar(page)
+    .getByRole("button", { name: /example\.test/ })
+    .dragTo(work, { targetPosition: { x: box.width / 2, y: box.height - 4 } });
+  await expect(page.getByRole("status")).toContainText("Перемещено");
+  await expect(work).toHaveCount(1);
+
+  // Раздел my внутрь work: встаёт последним подразделом, work по-прежнему один.
+  const box2 = (await work.boundingBox())!;
+  await sidebar(page)
+    .getByRole("button", { name: "my", exact: true })
+    .dragTo(work, { targetPosition: { x: box2.width / 2, y: box2.height - 4 } });
+  await expect(page.getByRole("status").last()).toContainText("Перемещено");
+  await expect(work).toHaveCount(1);
+  await expect(sidebar(page).getByRole("button", { name: "my", exact: true })).toHaveCount(1);
+});
+
 test("запись над разделом верхнего уровня уходит на верхний уровень", async ({ page }) => {
   await unlock(page);
   const entry = sidebar(page).getByRole("button", { name: /почта/ });
