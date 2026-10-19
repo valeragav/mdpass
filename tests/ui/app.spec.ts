@@ -1119,6 +1119,21 @@ test("на узком экране всё левее стрелки раздел
   await expect(page.getByRole("heading", { name: "server" })).toBeVisible();
 });
 
+test("на узком экране у раздела узкие поля, а пустой путь не занимает строку", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await sidebar(page).getByRole("button", { name: "work", exact: true }).getByText("work").click();
+  const title = page.getByRole("heading", { name: "work" });
+  await expect(title).toBeVisible();
+  expect((await title.boundingBox())!.x).toBeLessThanOrEqual(16);
+  await expect(page.getByRole("navigation", { name: "Путь" })).toHaveCount(0);
+  // У подраздела путь есть.
+  await page.getByRole("button", { name: /server/ }).click();
+  await expect(page.getByRole("navigation", { name: "Путь" })).toHaveText("work");
+});
+
 test("на узком экране скрытое избранное остаётся скрытым после перезапуска", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const open = async () => {

@@ -2,6 +2,7 @@
   import type { EntryView } from "../../lib/api";
   import { fieldCursor, onFieldKey, type CursorItem } from "../../lib/fields";
   import { keyNav } from "../../lib/keys.svelte";
+  import { layout as screen } from "../../lib/layout.svelte";
   import { plural } from "../../lib/text";
   import { vault } from "../../lib/vault.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
@@ -66,7 +67,8 @@
 
 <main bind:this={root}>
   <div class="head">
-    <Crumb path={path.slice(0, -1)} />
+    <!-- На телефоне пустой путь не занимает строку: место нужнее под записи. -->
+    {#if path.length > 1 || !screen.narrow}<Crumb path={path.slice(0, -1)} />{/if}
     <h1>{path.at(-1)}</h1>
     <p class="count">
       {entries.length}
@@ -281,5 +283,20 @@
   .hint {
     font-size: 12px;
     color: var(--text-subtle);
+  }
+
+  /* Телефон: поля и отступ сверху как у карточки записи. */
+  @media (max-width: 640px) {
+    .head {
+      padding: 16px 16px 0;
+    }
+
+    h1 {
+      font-size: 24px;
+    }
+
+    .content {
+      padding: 16px 16px 32px;
+    }
   }
 </style>
