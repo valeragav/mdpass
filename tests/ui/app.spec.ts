@@ -856,6 +856,12 @@ test("на узком экране запись открывается отде�
   await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Новая запись" })).toHaveCount(0);
 
+  // Путь над записью ведёт в раздел и на телефоне, из раздела можно вернуться в запись.
+  await page.getByRole("navigation", { name: "Путь" }).getByRole("button", { name: "my" }).click();
+  await expect(page.getByRole("heading", { name: "my" })).toBeVisible();
+  await page.getByRole("button", { name: "почта", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+
   await page.getByRole("button", { name: "Назад к записям" }).click();
   await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "почта" })).toHaveCount(0);

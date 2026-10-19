@@ -28,6 +28,14 @@
     color: inherit;
   }
 
+  /* Под палец: область нажатия выше строки, а строка остаётся той же высоты. */
+  @media (pointer: coarse) {
+    button {
+      padding: 10px 0;
+      margin: -10px 0;
+    }
+  }
+
   button:hover {
     color: var(--accent);
     text-decoration: underline;
