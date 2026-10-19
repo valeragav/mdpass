@@ -12,6 +12,8 @@
     /// Фокус на кнопке при открытии диалога.
     autofocus?: boolean;
     onclick?: () => void;
+    /// Кнопка «назад» экрана: её же нажимает системная кнопка «Назад» на телефоне.
+    back?: boolean;
     children: Snippet;
   }
 
@@ -24,12 +26,13 @@
     disabled = false,
     autofocus = false,
     onclick,
+    back = false,
     children,
   }: Props = $props();
 </script>
 
 <!-- svelte-ignore a11y_autofocus -->
-<button class="btn {variant} {size}" class:full {type} {disabled} {autofocus} {onclick}>
+<button class="btn {variant} {size}" class:full {type} {disabled} {autofocus} {onclick} data-back={back || undefined}>
   {#if icon}
     <Icon name={icon} stroke={variant === "primary" ? 2 : 1.75} />
   {/if}

@@ -209,7 +209,7 @@
 
 <div class="screen">
   <header>
-    <Button variant="ghost" size="sm" icon="back" onclick={() => go(app.backupsFrom)}>
+    <Button variant="ghost" size="sm" icon="back" back onclick={() => go(app.backupsFrom)}>
       {app.backupsFrom === "settings" ? "Настройки" : "Назад"}
     </Button>
     <Logo size="sm" />

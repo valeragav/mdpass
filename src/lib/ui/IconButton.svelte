@@ -10,9 +10,11 @@
     /// Включённая кнопка-переключатель залита цветом акцента.
     filled?: boolean;
     onclick?: () => void;
+    /// Кнопка «назад» экрана: её же нажимает системная кнопка «Назад» на телефоне.
+    back?: boolean;
   }
 
-  let { icon, label, bordered = false, size = "md", pressed, filled = false, onclick }: Props = $props();
+  let { icon, label, bordered = false, size = "md", pressed, filled = false, onclick, back = false }: Props = $props();
 </script>
 
 <button
@@ -24,6 +26,7 @@
   aria-pressed={pressed}
   title={label}
   {onclick}
+  data-back={back || undefined}
 >
   <Icon name={icon} size={18} fill={filled ? "currentColor" : "none"} />
 </button>

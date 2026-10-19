@@ -166,7 +166,7 @@
 
 <div class="screen">
   <header>
-    <Button variant="ghost" size="sm" icon="back" onclick={back}>Назад</Button>
+    <Button variant="ghost" size="sm" icon="back" back onclick={back}>Назад</Button>
     {#if !layout.narrow}
       <Logo size="sm" />
       <span class="spacer"></span>

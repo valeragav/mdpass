@@ -879,6 +879,42 @@ test("на узком экране запись открывается отде�
   await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
 });
 
+test("на узком экране системная кнопка «Назад» возвращает, а не закрывает приложение", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+  // На списке возвращаться некуда: лишней записи в истории нет, «Назад» закроет приложение.
+  await expect.poll(() => page.evaluate(() => history.state)).toBeNull();
+
+  // Запись → раздел по пути → «Назад» → список.
+  await sidebar(page).getByRole("button", { name: /почта/ }).click();
+  await expect(page.getByRole("heading", { name: "почта" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => history.state)).toBeNull();
+
+  // Настройки: из раздела к списку разделов, потом к записям.
+  await page.getByRole("button", { name: "Настройки" }).click();
+  await page.getByRole("button", { name: "Безопасность" }).click();
+  await expect(page.getByRole("heading", { name: "Безопасность" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Облако" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("button", { name: "Новая запись" })).toBeVisible();
+
+  // В редакторе с правками «Назад» спрашивает, а второй «Назад» закрывает вопрос.
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("черновик");
+  await page.goBack();
+  const ask = page.getByRole("dialog");
+  await expect(ask).toBeVisible();
+  await page.goBack();
+  await expect(ask).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Новая запись" })).toBeVisible();
+});
+
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 480 });
   await page.goto("/");
