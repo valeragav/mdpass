@@ -928,9 +928,9 @@
     overflow-y: auto;
   }
 
-  /* Телефон во время поиска: клавиатура занимает пол-экрана, теги — одной строкой,
-     листаются вбок. «Все теги» сам пропадает: строка больше не переполнена по высоте. */
-  aside.narrow .top:has(input:focus, input:not(:placeholder-shown)) .tags {
+  /* Телефон: места мало, теги — одной строкой, листаются вбок.
+     «Все теги» сам пропадает: строка не переполнена по высоте. */
+  aside.narrow .tags {
     flex-wrap: nowrap;
     max-height: none;
     overflow-x: auto;
@@ -938,7 +938,7 @@
     scrollbar-width: none;
   }
 
-  aside.narrow .top:has(input:focus, input:not(:placeholder-shown)) .chip {
+  aside.narrow .chip {
     flex: none;
   }
 

@@ -974,7 +974,7 @@ test("на узком экране избранное сворачивается
   await expect(favorites.getByRole("button", { name: /почта/ })).toBeVisible();
 });
 
-test("на узком экране во время поиска теги стоят в одну строку", async ({ page }) => {
+test("на узком экране теги стоят в одну строку", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByLabel("Мастер-пароль").fill("password1");
@@ -990,19 +990,10 @@ test("на узком экране во время поиска теги сто�
   const tags = page.locator("aside .tags");
   const rows = () =>
     tags.evaluate((box) => new Set([...box.querySelectorAll(".chip")].map((c) => c.getBoundingClientRect().top)).size);
-  expect(await rows()).toBeGreaterThan(1);
-
-  await page.getByLabel("Поиск").focus();
   await expect.poll(rows).toBe(1);
   await expect(page.getByRole("button", { name: /^Все теги/ })).toHaveCount(0);
-  // С текстом в поле — тоже одной строкой, даже когда клавиатуру убрали.
-  await page.getByLabel("Поиск").fill("tag");
-  await page.getByLabel("Поиск").blur();
-  await expect.poll(rows).toBe(1);
-
-  await page.getByLabel("Поиск").fill("");
-  await page.getByLabel("Поиск").blur();
-  await expect.poll(rows).toBeGreaterThan(1);
+  // Остальные теги за краем: строку листают вбок.
+  expect(await tags.evaluate((box) => box.scrollWidth > box.clientWidth)).toBe(true);
 });
 
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
