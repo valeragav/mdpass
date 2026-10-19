@@ -928,6 +928,20 @@
     overflow-y: auto;
   }
 
+  /* Телефон во время поиска: клавиатура занимает пол-экрана, теги — одной строкой,
+     листаются вбок. «Все теги» сам пропадает: строка больше не переполнена по высоте. */
+  aside.narrow .top:has(input:focus, input:not(:placeholder-shown)) .tags {
+    flex-wrap: nowrap;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+  }
+
+  aside.narrow .top:has(input:focus, input:not(:placeholder-shown)) .chip {
+    flex: none;
+  }
+
   /* «Все теги» — посередине между тегами и избранным: снизу у «Избранного» свой отступ
      внутри строки, поэтому нижнее поле меньше верхнего. */
   .tools {

@@ -974,6 +974,37 @@ test("на узком экране избранное сворачивается
   await expect(favorites.getByRole("button", { name: /почта/ })).toBeVisible();
 });
 
+test("на узком экране во время поиска теги стоят в одну строку", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  await page.getByLabel("Мастер-пароль").fill("password1");
+  await page.getByRole("button", { name: "Разблокировать" }).click();
+  await page.getByRole("button", { name: "Новая запись" }).click();
+  await page.getByLabel("Название").fill("много тегов");
+  await page.getByLabel("Теги").fill(Array.from({ length: 15 }, (_, i) => `tag-${i + 1}`).join(", "));
+  await page.getByRole("button", { name: "Сохранить запись" }).click();
+  await expect(page.getByRole("status")).toContainText("Запись добавлена");
+  if (await page.getByRole("button", { name: "Назад к записям" }).isVisible())
+    await page.getByRole("button", { name: "Назад к записям" }).click();
+
+  const tags = page.locator("aside .tags");
+  const rows = () =>
+    tags.evaluate((box) => new Set([...box.querySelectorAll(".chip")].map((c) => c.getBoundingClientRect().top)).size);
+  expect(await rows()).toBeGreaterThan(1);
+
+  await page.getByLabel("Поиск").focus();
+  await expect.poll(rows).toBe(1);
+  await expect(page.getByRole("button", { name: /^Все теги/ })).toHaveCount(0);
+  // С текстом в поле — тоже одной строкой, даже когда клавиатуру убрали.
+  await page.getByLabel("Поиск").fill("tag");
+  await page.getByLabel("Поиск").blur();
+  await expect.poll(rows).toBe(1);
+
+  await page.getByLabel("Поиск").fill("");
+  await page.getByLabel("Поиск").blur();
+  await expect.poll(rows).toBeGreaterThan(1);
+});
+
 test("на узком экране «Новая запись» видна, даже когда список длиннее экрана", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 480 });
   await page.goto("/");
