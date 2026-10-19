@@ -43,17 +43,19 @@
     vault.selectedSection = null;
   }
 
-  // Порядок строк для стрелок: подразделы, потом у каждой записи название и поля.
+  // Порядок строк для стрелок: у каждой записи название и поля, потом подразделы.
   // Номер первой строки каждой записи — её название.
   let layout = $derived.by(() => {
-    const order: CursorItem[] = subsections.map(({ name }) => ({ open: () => openSection(name) }));
+    const order: CursorItem[] = [];
     const starts = new Map<number, number>();
     for (const entry of entries) {
       starts.set(entry.id, order.length);
       order.push({ open: () => openEntry(entry) });
       entry.fields.forEach((_, index) => order.push({ entry, index }));
     }
-    return { order, starts };
+    const subStart = order.length;
+    for (const { name } of subsections) order.push({ open: () => openSection(name) });
+    return { order, starts, subStart };
   });
   let cursor = $derived(fieldCursor(layout.order.length));
 
@@ -76,26 +78,6 @@
 
   <div class="content scroll">
     <div class="inner">
-      {#if subsections.length > 0}
-        <nav class="subs" aria-label="Подразделы">
-          {#each subsections as sub, pos (sub.name)}
-            <button
-              type="button"
-              class="sub"
-              class:cursor={cursor === pos}
-              data-cursor={pos}
-              onclick={() => {
-                openSection(sub.name);
-                keyNav.zone = "list";
-              }}
-            >
-              <span class="chevron" aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
-              <span class="sub-name mono">{sub.name}</span>
-              <span class="sub-count">{sub.count} {plural(sub.count, ["запись", "записи", "записей"])}</span>
-            </button>
-          {/each}
-        </nav>
-      {/if}
       {#if entries.length === 0}
         <p class="hint">Прямо в этом разделе записей нет{subsections.length > 0 ? ", только подразделы" : ""}</p>
       {/if}
@@ -128,6 +110,26 @@
           {/if}
         </section>
       {/each}
+      {#if subsections.length > 0}
+        <nav class="subs" aria-label="Подразделы">
+          {#each subsections as sub, pos (sub.name)}
+            <button
+              type="button"
+              class="sub"
+              class:cursor={cursor === layout.subStart + pos}
+              data-cursor={layout.subStart + pos}
+              onclick={() => {
+                openSection(sub.name);
+                keyNav.zone = "list";
+              }}
+            >
+              <span class="chevron" aria-hidden="true"><Icon name="chevron" size={14} stroke={2} /></span>
+              <span class="sub-name mono">{sub.name}</span>
+              <span class="sub-count">{sub.count} {plural(sub.count, ["запись", "записи", "записей"])}</span>
+            </button>
+          {/each}
+        </nav>
+      {/if}
     </div>
   </div>
 </main>

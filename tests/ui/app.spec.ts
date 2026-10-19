@@ -559,6 +559,15 @@ test("запись и раздел, перенесённые внутрь раз
   await expect(page.getByRole("status")).toContainText("Перемещено");
   await expect(work).toHaveCount(1);
 
+  // В разделе сначала его записи, под ними подразделы. Стрелки идут в том же порядке.
+  await work.click();
+  const card = page.getByRole("region", { name: "example.test" });
+  const subs = page.getByRole("navigation", { name: "Подразделы" });
+  expect((await card.boundingBox())!.y).toBeLessThan((await subs.boundingBox())!.y);
+  await page.keyboard.press("ArrowRight");
+  await expect(card.getByRole("button", { name: "example.test" })).toHaveClass(/cursor/);
+  await work.click();
+
   // Раздел my внутрь work: встаёт последним подразделом, work по-прежнему один.
   const box2 = (await work.boundingBox())!;
   await sidebar(page)
