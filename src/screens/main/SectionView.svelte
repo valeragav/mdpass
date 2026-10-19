@@ -6,6 +6,7 @@
   import { vault } from "../../lib/vault.svelte";
   import Icon from "../../lib/ui/Icon.svelte";
   import FieldRow from "./FieldRow.svelte";
+  import Crumb from "./Crumb.svelte";
 
   interface Props {
     /// Выбранный раздел.
@@ -63,7 +64,7 @@
 
 <main bind:this={root}>
   <div class="head">
-    <div class="crumb mono">{path.slice(0, -1).join(" / ")}</div>
+    <Crumb path={path.slice(0, -1)} />
     <h1>{path.at(-1)}</h1>
     <p class="count">
       {entries.length}
@@ -144,12 +145,6 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
-  }
-
-  .crumb {
-    min-height: 17px;
-    font-size: 12px;
-    color: var(--text-subtle);
   }
 
   h1 {

@@ -10,6 +10,7 @@
   import { showToast } from "../../lib/toast.svelte";
   import { isNote, toggleFavorite } from "../../lib/vault.svelte";
   import FieldRow from "./FieldRow.svelte";
+  import Crumb from "./Crumb.svelte";
 
   interface Props {
     entry: EntryView;
@@ -52,7 +53,7 @@
 
 <main bind:this={root}>
   <div class="head">
-    <div class="crumb mono">{entry.path.join(" / ")}</div>
+    <Crumb path={entry.path} />
     <div class="title-row">
       <h1>{entry.title}</h1>
       {#if !compact}
@@ -157,12 +158,6 @@
     display: flex;
     flex-direction: column;
     gap: 12px;
-  }
-
-  .crumb {
-    min-height: 17px;
-    font-size: 12px;
-    color: var(--text-subtle);
   }
 
   .title-row {

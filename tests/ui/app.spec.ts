@@ -332,7 +332,11 @@ test("новая запись подставляет выбранный разд
 
   await expect(page.getByRole("status")).toContainText("Запись добавлена");
   await expect(page.getByRole("heading", { name: "gamma" })).toBeVisible();
-  await expect(page.getByText("work / site")).toBeVisible();
+  const crumb = page.getByRole("navigation", { name: "Путь" });
+  await expect(crumb).toHaveText("work / site");
+  // Щелчок по части пути открывает этот раздел.
+  await crumb.getByRole("button", { name: "work" }).click();
+  await expect(page.getByRole("heading", { name: "work" })).toBeVisible();
 });
 
 test("в редакторе под тегами подсказываются существующие", async ({ page }) => {
